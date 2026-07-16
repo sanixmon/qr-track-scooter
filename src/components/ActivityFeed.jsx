@@ -36,7 +36,7 @@ function FeedItem({ entry, isLast }) {
     catch { return '-' }
   })()
 
-  const typeLabel = entry.scooterType === 'sd' ? 'Dewasa (SD)' : 'Jumbo (SJ)'
+  const typeLabel = entry.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'
 
   return (
     <li className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--color-surface-3)]

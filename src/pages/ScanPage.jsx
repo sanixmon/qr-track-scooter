@@ -41,7 +41,7 @@ export default function ScanPage() {
         setResult(res)
       }
     } catch (err) {
-      setResult({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
+      setResult({ success: false, message: err.message || 'Gagal mengubah status sepeda.' })
     }
   }, [scanning, lastScanned])
 
@@ -71,9 +71,9 @@ export default function ScanPage() {
           <ArrowLeft size={13} />
           Kembali
         </button>
-        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Scan QR Scooter</h1>
+        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Scan QR Sepeda</h1>
         <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Pindai QR code untuk toggle status scooter
+          Pindai QR code untuk toggle status sepeda
         </p>
       </div>
 
@@ -105,7 +105,7 @@ export default function ScanPage() {
             </div>
             <div className="border-t border-[var(--color-border)] px-4 py-2.5">
               <p className="text-center text-[12px] text-[var(--color-muted)]">
-                Arahkan kamera ke QR code scooter
+                Arahkan kamera ke QR code sepeda
               </p>
             </div>
           </div>
@@ -137,9 +137,10 @@ function ModeBtn({ icon: Icon, label, sub, onClick }) {
     <button
       onClick={onClick}
       className="flex w-full cursor-pointer items-center gap-4 rounded-xl
-        border border-[var(--color-border)] bg-[var(--color-surface)]
-        px-5 py-4 text-left transition-colors
-        hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)]"
+        border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm
+        px-5 py-4 text-left transition-all
+        hover:border-[var(--color-accent)] hover:shadow-md hover:bg-[var(--color-accent-subtle)]
+        focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg)]"
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg
         bg-[var(--color-accent-subtle)] text-[var(--color-accent)]">
@@ -159,7 +160,8 @@ function ResetBtn({ onClick }) {
       onClick={onClick}
       className="flex w-full cursor-pointer items-center justify-center gap-1.5
         rounded-lg border border-[var(--color-border)] bg-transparent py-2.5
-        text-[12px] text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+        text-[12px] text-[var(--color-muted)] transition-all hover:text-[var(--color-text)] hover:bg-[var(--color-surface-3)]
+        focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg)]"
     >
       <ArrowLeft size={12} />
       Ganti metode scan
@@ -180,14 +182,14 @@ function ManualInput({ onScan }) {
           underline underline-offset-2 transition-colors hover:text-[var(--color-muted)]"
       >
         <Hash size={11} />
-        Masukkan ID scooter manual
+        Masukkan ID sepeda manual
       </button>
     )
   }
 
   return (
     <div className="mt-5 space-y-2">
-      <p className="text-[11px] font-medium text-[var(--color-muted)]">ID Scooter</p>
+      <p className="text-[11px] font-medium text-[var(--color-muted)]">ID Sepeda</p>
       <div className="flex gap-2">
         <input
           value={val}
@@ -197,14 +199,14 @@ function ManualInput({ onScan }) {
           className="flex-1 rounded-lg border border-[var(--color-border)]
             bg-[var(--color-surface)] px-3 py-2 font-mono text-[13px]
             text-[var(--color-text)] outline-none placeholder:text-[var(--color-subtle)]
-            focus:border-[var(--color-accent)] transition-colors"
+            focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all"
         />
         <button
           onClick={() => val && onScan(val)}
           disabled={!val}
           className="cursor-pointer rounded-lg bg-[var(--color-accent)] px-4 py-2
-            text-[13px] font-semibold text-white transition-opacity
-            hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            text-[13px] font-semibold text-white shadow-sm transition-all
+            hover:bg-[var(--color-accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           OK
         </button>

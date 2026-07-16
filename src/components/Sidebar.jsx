@@ -5,7 +5,7 @@ import { exportData } from '../storage'
 const NAV = [
   { to: '/',       icon: LayoutDashboard, label: 'Dashboard'  },
   { to: '/monitor', icon: Monitor,         label: 'Monitor'    },
-  { to: '/scan',   icon: QrCode,          label: 'Scan QR'    },
+  { to: '/scan',   icon: QrCode,          label: 'Scan'       },
   { to: '/manage', icon: Package,         label: 'Kelola Unit' },
 ]
 
@@ -19,7 +19,7 @@ export default function Sidebar({ onClose }) {
             <Bike size={15} />
           </div>
           <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text)]">
-            TrackScooter
+            TrackSepeda
           </span>
         </div>
         <button

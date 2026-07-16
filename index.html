@@ -1,14 +1,19 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TrackScooter — Sistem pelacakan status scooter berbasis QR code. Real-time, tanpa backend." />
-    <title>TrackScooter — Pelacak Status Scooter</title>
+    <meta name="description" content="TrackSepeda — Sistem pelacakan status sepeda listrik berbasis QR code. Real-time, berjalan di browser." />
+    <title>TrackSepeda — Pelacak Status Sepeda Listrik</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      if (localStorage.getItem('theme') === 'light') {
+        document.documentElement.classList.remove('dark')
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

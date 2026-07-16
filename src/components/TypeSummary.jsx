@@ -1,7 +1,7 @@
 /** Type breakdown: SD vs SJ summary cards */
 export default function TypeSummary({ scooters }) {
   const groups = {
-    sd: { label: 'SD (Dewasa)', available: 0, inUse: 0, maintenance: 0 },
+    sd: { label: 'SD (Standar)', available: 0, inUse: 0, maintenance: 0 },
     sj: { label: 'SJ (Jumbo)', available: 0, inUse: 0, maintenance: 0 }
   }
 

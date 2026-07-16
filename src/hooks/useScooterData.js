@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getScooters, getActivityLog } from '../storage'
-import { supabase } from '../supabaseClient'
 
 export function useScooterData() {
-  const [scooters, setScooters] = useState([])
+  const [scooters,    setScooters]    = useState([])
   const [activityLog, setActivityLog] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -16,57 +15,27 @@ export function useScooterData() {
       setScooters(s)
       setActivityLog(l)
     } catch (err) {
-      console.error('Error fetching data from Supabase:', err)
-      setError(err.message || 'Gagal menyinkronkan data dengan Supabase.')
+      console.error('Error reading local storage:', err)
+      setError(err.message || 'Gagal membaca data lokal.')
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    const initData = async () => {
-      await refresh()
-    }
-    initData()
+    refresh()
 
-    let scootersSubscription
-    let logSubscription
+    // Listen for localStorage changes (same tab via custom events, other tabs via 'storage' event)
+    const handleChange = () => { refresh() }
 
-    try {
-      // Subscribe to changes in public.scooters
-      scootersSubscription = supabase
-        .channel('scooters-changes')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'scooters' },
-          () => {
-            refresh()
-          }
-        )
-        .subscribe()
-
-      // Subscribe to changes in public.activity_log
-      logSubscription = supabase
-        .channel('activity-log-changes')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'activity_log' },
-          () => {
-            refresh()
-          }
-        )
-        .subscribe()
-    } catch (err) {
-      console.warn('Realtime subscription failed:', err.message)
-    }
+    window.addEventListener('trackbike:bikes-changed', handleChange)
+    window.addEventListener('trackbike:log-changed',   handleChange)
+    window.addEventListener('storage',                 handleChange)
 
     return () => {
-      try {
-        if (scootersSubscription) supabase.removeChannel(scootersSubscription)
-        if (logSubscription) supabase.removeChannel(logSubscription)
-      } catch (err) {
-        console.warn('Failed to clean up realtime subscription channels:', err.message)
-      }
+      window.removeEventListener('trackbike:bikes-changed', handleChange)
+      window.removeEventListener('trackbike:log-changed',   handleChange)
+      window.removeEventListener('storage',                 handleChange)
     }
   }, [refresh])
 

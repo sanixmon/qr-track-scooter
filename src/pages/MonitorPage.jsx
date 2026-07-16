@@ -135,7 +135,7 @@ export default function MonitorPage() {
       </div>
 
       {/* ── Date Navigator ── */}
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         {/* Prev day button */}
         <button
           onClick={goToPrev}
@@ -146,7 +146,7 @@ export default function MonitorPage() {
         </button>
 
         {/* Date pills */}
-        <div className="flex flex-1 items-center gap-2 overflow-x-auto">
+        <div className="flex w-full sm:w-auto flex-1 items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           {/* Today / Live pill */}
           <button
             onClick={() => setSelectedDate(null)}
@@ -208,7 +208,7 @@ export default function MonitorPage() {
       </div>
 
       {/* ── Daily Stats Bar ── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent-subtle)] text-[var(--color-accent)]">
             <BarChart2 size={15} />
@@ -255,8 +255,8 @@ export default function MonitorPage() {
       ) : loading && scooters.length === 0 ? (
         <div className="flex h-[40vh] flex-col items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--color-accent)] border-t-transparent mb-4" />
-          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">Menghubungkan ke Database Supabase...</h3>
-          <p className="mt-1 text-[12px] text-[var(--color-muted)]">Menyiapkan koneksi real-time untuk petugas lapangan.</p>
+          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">Memuat Data Lokal...</h3>
+          <p className="mt-1 text-[12px] text-[var(--color-muted)]">Menyiapkan data untuk petugas lapangan.</p>
         </div>
       ) : (
         <>
@@ -296,7 +296,7 @@ export default function MonitorPage() {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-subtle)]">Filter Jenis</p>
                     <div className="flex gap-2">
                       <FilterTab label="Semua Jenis" active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} />
-                      <FilterTab label="Dewasa (SD)" active={typeFilter === 'sd'} onClick={() => setTypeFilter('sd')} count={scooters.filter(s => s.type === 'sd').length} />
+                      <FilterTab label="Standar (SD)" active={typeFilter === 'sd'} onClick={() => setTypeFilter('sd')} count={scooters.filter(s => s.type === 'sd').length} />
                       <FilterTab label="Jumbo (SJ)" active={typeFilter === 'sj'} onClick={() => setTypeFilter('sj')} count={scooters.filter(s => s.type === 'sj').length} />
                     </div>
                   </div>
@@ -305,7 +305,7 @@ export default function MonitorPage() {
                 {/* Scooter Grid */}
                 {filteredScooters.length === 0 ? (
                   <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center text-[var(--color-muted)]">
-                    Tidak ada unit scooter yang cocok dengan filter aktif.
+                    Tidak ada unit sepeda yang cocok dengan filter aktif.
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -443,7 +443,7 @@ export default function MonitorPage() {
                           <span className="text-[11px] text-[var(--color-muted)] font-mono">{timeStr}</span>
                         </div>
                         <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                          Unit {entry.scooterType === 'sd' ? 'Dewasa (SD)' : 'Jumbo (SJ)'} {isCheckout ? 'disewa (checkout)' : 'dikembalikan (return)'}
+                          Unit {entry.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'} {isCheckout ? 'disewa (checkout)' : 'dikembalikan (return)'}
                         </p>
                         {timeAgo && <p className="text-[10px] text-[var(--color-subtle)] mt-0.5">{timeAgo}</p>}
                       </div>

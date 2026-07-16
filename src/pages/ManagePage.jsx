@@ -25,19 +25,19 @@ export default function ManagePage() {
       setType('sd')
       await refresh()
     } catch (err) {
-      setError(err.message || 'Gagal menambahkan scooter.')
+      setError(err.message || 'Gagal menambahkan sepeda.')
     } finally {
       setSubmitting(false)
     }
   }
 
   const handleDelete = async (id) => {
-    if (confirm(`Apakah Anda yakin ingin menghapus scooter ${id}?`)) {
+    if (confirm(`Apakah Anda yakin ingin menghapus sepeda ${id}?`)) {
       try {
         await deleteScooter(id)
         await refresh()
       } catch (err) {
-        alert('Gagal menghapus scooter: ' + err.message)
+        alert('Gagal menghapus sepeda: ' + err.message)
       }
     }
   }
@@ -58,7 +58,7 @@ export default function ManagePage() {
       await updateScooter(id, fields)
       await refresh()
     } catch (err) {
-      alert('Gagal mengubah status scooter: ' + err.message)
+      alert('Gagal mengubah status sepeda: ' + err.message)
     }
   }
 
@@ -85,9 +85,9 @@ export default function ManagePage() {
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">
       {/* Header */}
       <div>
-        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Scooter</h1>
+        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Sepeda</h1>
         <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Tambah unit scooter baru, ubah status unit, dan unduh QR code untuk operasional
+          Tambah unit sepeda baru, ubah status unit, dan unduh QR code untuk operasional
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export default function ManagePage() {
             <div className="flex items-start gap-3 rounded-xl border border-[var(--color-red-ring)] bg-[var(--color-red-subtle)] p-4 text-[12px] text-[var(--color-red)]">
               <ShieldAlert size={16} className="mt-0.5 shrink-0" />
               <div className="flex-1">
-                <p className="font-semibold">Koneksi Supabase Bermasalah</p>
+                <p className="font-semibold">Data Lokal Bermasalah</p>
                 <p className="mt-0.5 opacity-90">{dbError}</p>
               </div>
               <button
@@ -124,7 +124,7 @@ export default function ManagePage() {
           )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
         {/* Left column: Add Form */}
-        <div className="h-fit rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+        <div className="h-fit rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm p-5">
           <h2 className="mb-4 text-[13px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
             Tambah Unit Baru
           </h2>
@@ -138,7 +138,7 @@ export default function ManagePage() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-[var(--color-muted)]">ID Scooter (Opsional)</label>
+              <label className="text-[11px] font-medium text-[var(--color-muted)]">ID Sepeda (Opsional)</label>
               <div className="relative flex items-center">
                 <span className="absolute left-3 font-mono text-[13px] font-bold text-[var(--color-accent)] pointer-events-none select-none">
                   {type.toUpperCase()}-
@@ -152,19 +152,19 @@ export default function ManagePage() {
                     setError('')
                   }}
                   placeholder="099 (Auto jika kosong)"
-                  className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-12 pr-3 py-2 font-mono text-[13px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors placeholder:text-[var(--color-subtle)]"
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-12 pr-3 py-2 font-mono text-[13px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all placeholder:text-[var(--color-subtle)]"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-[var(--color-muted)]">Jenis Scooter</label>
+              <label className="text-[11px] font-medium text-[var(--color-muted)]">Jenis Sepeda</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
               >
-                <option value="sd">Dewasa (SD)</option>
+                <option value="sd">Standar (SD)</option>
                 <option value="sj">Jumbo (SJ)</option>
               </select>
             </div>
@@ -172,7 +172,7 @@ export default function ManagePage() {
             <button
               type="submit"
               disabled={submitting || loading}
-              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-[var(--color-accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <>
@@ -182,7 +182,7 @@ export default function ManagePage() {
               ) : (
                 <>
                   <Plus size={15} />
-                  Tambah Scooter
+                  Tambah Sepeda
                 </>
               )}
             </button>
@@ -190,7 +190,7 @@ export default function ManagePage() {
         </div>
 
         {/* Right column: Scooter List & Actions */}
-        <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+        <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm overflow-hidden">
           {/* List Toolbar */}
           <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-[13px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
@@ -206,7 +206,7 @@ export default function ManagePage() {
                   placeholder="Cari ID..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full sm:w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-8 pr-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors"
+                  className="w-full sm:w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-8 pr-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all"
                 />
               </div>
 
@@ -214,7 +214,7 @@ export default function ManagePage() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
               >
                 <option value="all">Semua Status</option>
                 <option value="available">Tersedia</option>
@@ -226,10 +226,10 @@ export default function ManagePage() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
               >
                 <option value="all">Semua Jenis</option>
-                <option value="sd">Dewasa (SD)</option>
+                <option value="sd">Standar (SD)</option>
                 <option value="sj">Jumbo (SJ)</option>
               </select>
             </div>
@@ -239,18 +239,18 @@ export default function ManagePage() {
             {loading && filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent mb-2" />
-                <p className="text-[13px] text-[var(--color-muted)]">Memuat data scooter...</p>
+                <p className="text-[13px] text-[var(--color-muted)]">Memuat data sepeda...</p>
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center">
                 <Bike size={28} className="mb-2 text-[var(--color-border-2)]" />
-                <p className="text-[13px] text-[var(--color-muted)]">Tidak ada scooter ditemukan.</p>
+                <p className="text-[13px] text-[var(--color-muted)]">Tidak ada sepeda ditemukan.</p>
               </div>
             ) : (
               <table className="w-full border-collapse text-left text-[13px]">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                    <th className="px-4 py-3">ID Scooter</th>
+                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                    <th className="px-4 py-3">ID Sepeda</th>
                     <th className="px-4 py-3">Jenis</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Aksi</th>
@@ -270,7 +270,7 @@ export default function ManagePage() {
                               : 'bg-[var(--color-surface-3)] text-[var(--color-muted)]'
                           }`}
                         >
-                          {scooter.type === 'sd' ? 'Dewasa (SD)' : 'Jumbo (SJ)'}
+                          {scooter.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -284,7 +284,7 @@ export default function ManagePage() {
                             <select
                               value={scooter.status}
                               onChange={(e) => handleStatusChange(scooter.id, e.target.value)}
-                              className={`rounded border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2 py-1 text-[12px] font-medium outline-none focus:border-[var(--color-accent)] cursor-pointer transition-colors ${
+                              className={`rounded border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2 py-1 text-[12px] font-medium outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer transition-all ${
                                 scooter.status === 'available'
                                   ? 'text-[var(--color-green)] border-[var(--color-green-ring)]'
                                   : 'text-[var(--color-warning)] border-[var(--color-warning-ring)]'

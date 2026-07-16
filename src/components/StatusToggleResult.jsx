@@ -45,7 +45,7 @@ export default function StatusToggleResult({ result, onClose }) {
 
         <h3 className="mb-1.5 text-[16px] font-semibold text-[var(--color-text)]">
           {isSuccess
-            ? (isCheckout ? 'Scooter Diambil' : 'Scooter Dikembalikan')
+            ? (isCheckout ? 'Sepeda Diambil' : 'Sepeda Dikembalikan')
             : 'Gagal'}
         </h3>
         <p className="mb-6 text-[13px] leading-relaxed text-[var(--color-muted)]">

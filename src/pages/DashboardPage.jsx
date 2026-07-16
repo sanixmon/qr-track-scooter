@@ -56,13 +56,13 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-[20px] font-bold text-[var(--color-text)]">Dashboard</h1>
           <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-            Pantau status scooter secara real-time
+            Pantau status sepeda secara real-time
           </p>
         </div>
         <Link to="/scan">
-          <button className="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 cursor-pointer">
+          <button className="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-[var(--color-accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 focus:ring-offset-[var(--color-bg)] cursor-pointer">
             <QrCode size={15} />
-            Scan QR
+            Scan
           </button>
         </Link>
       </div>
@@ -84,8 +84,8 @@ export default function DashboardPage() {
       ) : loading && scooters.length === 0 ? (
         <div className="flex h-[50vh] flex-col items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--color-accent)] border-t-transparent mb-4" />
-          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">Menghubungkan ke Supabase...</h3>
-          <p className="mt-1 text-[12px] text-[var(--color-muted)]">Sedang memuat data unit dan aktivitas terbaru secara realtime.</p>
+          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">Memuat Data Lokal...</h3>
+          <p className="mt-1 text-[12px] text-[var(--color-muted)]">Sedang membaca data unit dan aktivitas terbaru.</p>
         </div>
       ) : (
         <>
@@ -114,14 +114,14 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
-                    Status Scooter ({filteredScooters.length})
+                    Status Sepeda ({filteredScooters.length})
                   </h2>
                   <div className="flex items-center gap-2">
                     {/* Status Filter */}
                     <select
                       value={gridStatus}
                       onChange={(e) => setGridStatus(e.target.value)}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
                     >
                       <option value="all">Semua Status</option>
                       <option value="available">Tersedia</option>
@@ -132,17 +132,17 @@ export default function DashboardPage() {
                     <select
                       value={gridType}
                       onChange={(e) => setGridType(e.target.value)}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
                     >
                       <option value="all">Semua Jenis</option>
-                      <option value="sd">Dewasa (SD)</option>
+                      <option value="sd">Standar (SD)</option>
                       <option value="sj">Jumbo (SJ)</option>
                     </select>
                   </div>
                 </div>
                 {filteredScooters.length === 0 ? (
                   <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-[12px] text-[var(--color-muted)]">
-                    Tidak ada scooter yang cocok dengan filter status/jenis.
+                    Tidak ada sepeda yang cocok dengan filter status/jenis.
                   </p>
                 ) : (
                   <ScooterGrid scooters={filteredScooters} />
@@ -150,7 +150,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Detailed Activity History Table */}
-              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm overflow-hidden">
                 {/* Header / Filter bar */}
                 <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -174,7 +174,7 @@ export default function DashboardPage() {
                           setSearch(e.target.value)
                           setCurrentPage(1)
                         }}
-                        className="w-32 sm:w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-7 pr-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors"
+                        className="w-32 sm:w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] pl-7 pr-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all"
                       />
                     </div>
 
@@ -185,7 +185,7 @@ export default function DashboardPage() {
                         setFilterAction(e.target.value)
                         setCurrentPage(1)
                       }}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-colors cursor-pointer"
+                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
                     >
                       <option value="all">Semua</option>
                       <option value="checkout">Keluar</option>
@@ -203,8 +203,8 @@ export default function DashboardPage() {
                   ) : (
                     <table className="w-full text-left text-[12px]">
                       <thead>
-                        <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                          <th className="px-4 py-2.5">ID Scooter</th>
+                        <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                          <th className="px-4 py-2.5">ID Sepeda</th>
                           <th className="px-4 py-2.5">Jenis</th>
                           <th className="px-4 py-2.5">Status Baru</th>
                           <th className="px-4 py-2.5">Waktu</th>
@@ -228,7 +228,7 @@ export default function DashboardPage() {
                               </td>
                               <td className="px-4 py-2.5">
                                 <span className="rounded bg-[var(--color-surface-3)] px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
-                                  {entry.scooterType === 'sd' ? 'Dewasa (SD)' : 'Jumbo (SJ)'}
+                                  {entry.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'}
                                 </span>
                               </td>
                               <td className="px-4 py-2.5">

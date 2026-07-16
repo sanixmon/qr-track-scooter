@@ -1,46 +1,79 @@
 @import "tailwindcss";
 
 @theme {
-  /* === Base palette === */
-  --color-bg:        #07090e;
-  --color-surface:   #0d1017;
-  --color-surface-2: #13172199;
-  --color-surface-3: #1a1f2e;
-  --color-border:    #1e2333;
-  --color-border-2:  #252d42;
-
-  /* === Typography === */
-  --color-text:      #dde3f0;
-  --color-muted:     #5a6480;
-  --color-subtle:    #3a4260;
-
-  /* === Accent — clean indigo/blue === */
-  --color-accent:    #4f6ef7;
-  --color-accent-hover: #3d5ce0;
-  --color-accent-subtle: rgba(79, 110, 247, 0.10);
-  --color-accent-ring:   rgba(79, 110, 247, 0.25);
-
-  /* === Status === */
-  --color-green:        #22c55e;
-  --color-green-subtle: rgba(34, 197, 94, 0.10);
-  --color-green-ring:   rgba(34, 197, 94, 0.20);
-
-  --color-red:          #ef4444;
-  --color-red-subtle:   rgba(239, 68, 68, 0.10);
-  --color-red-ring:     rgba(239, 68, 68, 0.20);
-
-  --color-warning:        #f59e0b;
-  --color-warning-subtle: rgba(245, 158, 11, 0.10);
-  --color-warning-ring:   rgba(245, 158, 11, 0.20);
-
-  /* === Sidebar === */
-  --sidebar-width: 220px;
-
+  /* Layout & Fonts */
+  --sidebar-width: 240px;
+  --navbar-height: 60px;
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
 }
 
 @layer base {
+  /* === LIGHT MODE (HIGH CONTRAST FOR OUTDOOR) === */
+  :root {
+    --color-bg:        #F9FAFB;
+    --color-surface:   #FFFFFF;
+    --color-surface-2: #F3F4F6;
+    --color-surface-3: #E5E7EB;
+    --color-border:    #D1D5DB;
+    --color-border-2:  #9CA3AF;
+
+    --color-text:      #111827;
+    --color-muted:     #4B5563;
+    --color-subtle:    #6B7280;
+
+    --color-accent:    #2563EB;
+    --color-accent-hover: #1D4ED8;
+    --color-accent-subtle: #EFF6FF;
+    --color-accent-ring: rgba(37, 99, 235, 0.3);
+
+    --color-green:        #059669;
+    --color-green-subtle: #ECFDF5;
+    --color-green-ring:   rgba(5, 150, 105, 0.3);
+
+    --color-red:          #DC2626;
+    --color-red-subtle:   #FEF2F2;
+    --color-red-ring:     rgba(220, 38, 38, 0.3);
+
+    --color-warning:        #D97706;
+    --color-warning-subtle: #FFFBEB;
+    --color-warning-ring:   rgba(217, 119, 6, 0.3);
+  }
+
+  /* === DARK MODE === */
+  .dark {
+    --color-bg:        #000000;
+    --color-surface:   #0A0A0A;
+    --color-surface-2: #121212;
+    --color-surface-3: #1A1A1A;
+    --color-border:    #262626;
+    --color-border-2:  #333333;
+
+    --color-text:      #EDEDED;
+    --color-muted:     #A1A1AA;
+    --color-subtle:    #71717A;
+
+    --color-accent:    #4f6ef7;
+    --color-accent-hover: #3d5ce0;
+    --color-accent-subtle: rgba(79, 110, 247, 0.15);
+    --color-accent-ring:   rgba(79, 110, 247, 0.25);
+
+    --color-green:        #22c55e;
+    --color-green-subtle: rgba(34, 197, 94, 0.15);
+    --color-green-ring:   rgba(34, 197, 94, 0.20);
+
+    --color-red:          #ef4444;
+    --color-red-subtle:   rgba(239, 68, 68, 0.15);
+    --color-red-ring:     rgba(239, 68, 68, 0.20);
+
+    --color-warning:        #f59e0b;
+    --color-warning-subtle: rgba(245, 158, 11, 0.15);
+    --color-warning-ring:   rgba(245, 158, 11, 0.20);
+  }
   *, *::before, *::after { box-sizing: border-box; }
 
   html, body, #root { height: 100%; }
@@ -60,6 +93,12 @@
 }
 
 @layer utilities {
+  /* ---- Theme Switch Transition Lock ---- */
+  .theme-transition-lock,
+  .theme-transition-lock * {
+    transition: none !important;
+  }
+
   /* ---- Sidebar overlay ---- */
   .sidebar-overlay {
     background: rgba(0, 0, 0, 0.55);

@@ -47,7 +47,7 @@ export default function ScooterCard({ scooter }) {
             {scooter.id}
           </p>
           <p className="text-[11px] text-[var(--color-muted)] font-medium">
-            {scooter.type === 'sd' ? 'Dewasa (SD)' : 'Jumbo (SJ)'}
+            {scooter.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'}
           </p>
         </div>
         <span className={`

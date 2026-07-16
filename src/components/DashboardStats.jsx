@@ -13,7 +13,7 @@ export default function DashboardStats({ scooters, activityLog }) {
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <StatCard label="Tersedia"        value={available} icon={CheckCircle2} valueColor="text-[var(--color-green)]"  iconBg="bg-[var(--color-green-subtle)]"  iconColor="text-[var(--color-green)]"  />
       <StatCard label="Digunakan"       value={inUse}     icon={CircleDot}    valueColor="text-[var(--color-red)]"    iconBg="bg-[var(--color-red-subtle)]"    iconColor="text-[var(--color-red)]"    />
-      <StatCard label="Total Scooter"   value={total}     icon={Layers}       valueColor="text-[var(--color-text)]"   iconBg="bg-[var(--color-accent-subtle)]" iconColor="text-[var(--color-accent)]" />
+      <StatCard label="Total Sepeda"    value={total}     icon={Layers}       valueColor="text-[var(--color-text)]"   iconBg="bg-[var(--color-accent-subtle)]" iconColor="text-[var(--color-accent)]" />
       <StatCard label="Aktivitas Hari Ini" value={todayAct} icon={Activity}  valueColor="text-[var(--color-accent)]" iconBg="bg-[var(--color-accent-subtle)]" iconColor="text-[var(--color-accent)]" />
     </div>
   )
@@ -21,8 +21,8 @@ export default function DashboardStats({ scooters, activityLog }) {
 
 function StatCard({ label, value, icon: Icon, valueColor, iconBg, iconColor }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4">
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg} ${iconColor}`}>
+    <div className="group flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm hover:shadow-md hover:border-[var(--color-border-2)] transition-all px-4 py-4">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg} ${iconColor} group-hover:scale-105 transition-transform`}>
         <Icon size={17} />
       </div>
       <div className="min-w-0">
