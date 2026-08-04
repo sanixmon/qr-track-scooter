@@ -2,17 +2,37 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, ImageUp, ArrowLeft, Hash } from 'lucide-react'
 import { toggleScooterStatus } from '../storage'
-import { showConfirmDialog } from '../utils/swal'
+import { MySwal, showConfirmDialog } from '../utils/swal'
 import QRScanner from '../components/QRScanner'
 import QRImageUploader from '../components/QRImageUploader'
-import StatusToggleResult from '../components/StatusToggleResult'
 
 export default function ScanPage() {
   const navigate = useNavigate()
   const [mode, setMode]       = useState(null)    // null | 'camera' | 'image'
-  const [result, setResult]   = useState(null)
   const [scanning, setScanning] = useState(true)
   const [lastScanned, setLastScanned] = useState({ id: '', time: 0 })
+
+  const showResultAlert = useCallback(async (res) => {
+    const isSuccess = res.success
+    const isCheckout = res.action === 'checkout'
+
+    await MySwal.fire({
+      icon: isSuccess ? 'success' : 'error',
+      title: isSuccess
+        ? (isCheckout ? 'Scooter Diambil' : 'Scooter Dikembalikan')
+        : 'Gagal',
+      text: res.message,
+      confirmButtonText: 'OK',
+      timer: isSuccess ? 3000 : undefined,
+      timerProgressBar: isSuccess,
+    })
+
+    if (isSuccess) {
+      navigate('/')
+    } else {
+      setScanning(true)
+    }
+  }, [navigate])
 
   const handleScan = useCallback(async (scooterId) => {
     if (!scanning) return
@@ -38,29 +58,23 @@ export default function ScanPage() {
 
         if (confirmRes.isConfirmed) {
           const forceRes = await toggleScooterStatus(scooterId, true)
-          setResult(forceRes)
+          await showResultAlert(forceRes)
         } else {
           setTimeout(() => {
             setScanning(true)
           }, 800)
         }
       } else {
-        setResult(res)
+        await showResultAlert(res)
       }
     } catch (err) {
-      setResult({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
+      await showResultAlert({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
     }
-  }, [scanning, lastScanned])
+  }, [scanning, lastScanned, showResultAlert])
 
   const handleError = useCallback((msg) => {
-    setResult({ success: false, message: msg })
-  }, [])
-
-  const handleClose = () => {
-    setResult(null)
-    setScanning(true)
-    if (result?.success) navigate('/')
-  }
+    showResultAlert({ success: false, message: msg })
+  }, [showResultAlert])
 
   const reset = () => { setMode(null); setScanning(true) }
 
@@ -133,8 +147,6 @@ export default function ScanPage() {
 
       {/* Manual input — always visible below mode */}
       <ManualInput onScan={handleScan} />
-
-      <StatusToggleResult result={result} onClose={handleClose} />
     </div>
   )
 }
@@ -201,7 +213,7 @@ function ManualInput({ onScan }) {
         <input
           value={val}
           onChange={e => setVal(e.target.value.toUpperCase())}
-          placeholder="SC001"
+          placeholder="SD-1"
           onKeyDown={e => e.key === 'Enter' && val && onScan(val)}
           className="flex-1 rounded-lg border border-[var(--color-border)]
             bg-[var(--color-surface)] px-3 py-2 font-mono text-[13px]
