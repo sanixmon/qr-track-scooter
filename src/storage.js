@@ -102,17 +102,31 @@ export async function downloadScooterQR(scooter) {
 
 export async function downloadDatabaseBackup() {
   try {
-    const response = await fetch('/api/backup/download')
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`)
+    const backupInfo = await api('/api/backup', { method: 'POST' })
+    if (!backupInfo.success) {
+      throw new Error(backupInfo.error || 'Gagal membuat file backup.')
     }
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
+
+    const res = await fetch(`${API}/api/backup/download`)
+    if (!res.ok) {
+      throw new Error(`Gagal mengunduh backup (HTTP ${res.status})`)
+    }
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+
     const a = document.createElement('a')
+    a.style.display = 'none'
     a.href = url
-    a.download = `trackscooter_backup_${new Date().toISOString().slice(0, 10)}.db`
+    a.download = backupInfo.filename || `trackscooter_backup_${new Date().toISOString().slice(0, 10)}.db`
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+
+    setTimeout(() => {
+      if (document.body.contains(a)) {
+        document.body.removeChild(a)
+      }
+      window.URL.revokeObjectURL(url)
+    }, 1000)
   } catch (err) {
     throw new Error('Gagal mengunduh backup database: ' + err.message)
   }
