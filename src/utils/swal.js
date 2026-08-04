@@ -5,14 +5,14 @@ export const Toast = Swal.mixin({
   toast: true,
   position: 'top-end',
   showConfirmButton: false,
-  timer: 3000,
+  timer: 2200,
   timerProgressBar: true,
   background: 'var(--color-surface)',
   color: 'var(--color-text)',
   customClass: {
-    popup: 'rounded-xl border border-[var(--color-border-2)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-xl p-3.5 font-sans mt-2 mr-2',
-    title: 'text-[13px] font-bold text-[var(--color-text)]',
-    htmlContainer: 'text-[12px] text-[var(--color-muted)]',
+    popup: 'rounded-lg border border-[var(--color-border-2)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-lg px-3 py-2 font-sans mt-2 mr-2',
+    title: 'text-[12px] font-semibold text-[var(--color-text)] m-0 p-0',
+    htmlContainer: 'text-[11px] text-[var(--color-muted)] m-0 p-0',
   },
   didOpen: (toast) => {
     toast.addEventListener('mouseenter', Swal.stopTimer)
@@ -23,8 +23,8 @@ export const Toast = Swal.mixin({
 export const showToastNotification = ({ icon = 'success', title, text }) => {
   return Toast.fire({
     icon,
-    title,
-    text
+    title: title || text,
+    text: title && text ? text : undefined
   })
 }
 

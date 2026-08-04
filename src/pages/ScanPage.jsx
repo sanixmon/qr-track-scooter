@@ -15,19 +15,18 @@ export default function ScanPage() {
   const showResultNotification = useCallback(async (res) => {
     const isSuccess = res.success
     const isCheckout = res.action === 'checkout'
+    const scooterId = res.scooter?.id ? `Unit ${res.scooter.id} ` : ''
 
     showToastNotification({
       icon: isSuccess ? 'success' : 'error',
       title: isSuccess
-        ? (isCheckout ? 'Scooter Diambil' : 'Scooter Dikembalikan')
-        : 'Gagal',
-      text: res.message,
+        ? `${scooterId}${isCheckout ? 'Disewakan' : 'Dikembalikan'}`
+        : (res.message || 'Gagal'),
     })
 
-    // Keep scanning active for continuous scanning without screen locking
     setTimeout(() => {
       setScanning(true)
-    }, 1500)
+    }, 1200)
   }, [])
 
   const handleScan = useCallback(async (scooterId) => {

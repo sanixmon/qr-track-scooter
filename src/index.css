@@ -21,8 +21,23 @@
 
 .swal2-popup.swal2-toast {
   pointer-events: auto !important;
-  max-width: 340px !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4) !important;
+  max-width: 260px !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3) !important;
+}
+
+.swal2-popup.swal2-toast .swal2-icon {
+  width: 1.25em !important;
+  height: 1.25em !important;
+  margin: 0 8px 0 0 !important;
+}
+
+.swal2-popup.swal2-toast .swal2-title {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 @theme {
