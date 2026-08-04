@@ -1,23 +1,15 @@
 @import "tailwindcss";
 @import "sweetalert2/dist/sweetalert2.min.css";
 
-/* SweetAlert2 positioning & layout shift fix */
+/* SweetAlert2 backdrop & z-index fix */
+body.swal2-shown {
+  overflow: hidden !important;
+}
+
 .swal2-container {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 1rem !important;
   z-index: 9999 !important;
   backdrop-filter: blur(4px);
   background-color: rgba(0, 0, 0, 0.6) !important;
-}
-
-.swal2-popup {
-  margin: auto !important;
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  transform: none !important;
 }
 
 @theme {

@@ -2,6 +2,7 @@ import Swal from 'sweetalert2'
 import 'sweetalert2/dist/sweetalert2.min.css'
 
 export const MySwal = Swal.mixin({
+  heightAuto: false,
   customClass: {
     popup: 'rounded-2xl border border-[var(--color-border-2)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-2xl p-6 font-sans',
     title: 'text-[18px] font-bold text-[var(--color-text)]',
