@@ -5,15 +5,27 @@ import { addScooter, deleteScooter, updateScooter, downloadScooterQR } from '../
 import { showConfirmDialog, showPromptDialog, showErrorAlert } from '../utils/swal'
 
 export default function ManagePage() {
-  const { scooters, loading, error: dbError, refresh } = useScooterData()
+  const { scooters, activityLog, loading, error: dbError, refresh } = useScooterData()
   const [idInput, setIdInput] = useState('')
   const [type, setType] = useState('sd')
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [sortBy, setSortBy] = useState('id-asc')
   const [error, setError] = useState('')
   const [downloadingId, setDownloadingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Calculate today's checkout frequency per scooter
+  const getTodayCheckoutCount = (scooterId) => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    return (activityLog || []).filter(e =>
+      e.scooterId === scooterId &&
+      e.action === 'checkout' &&
+      e.timestamp &&
+      new Date(e.timestamp).toISOString().slice(0, 10) === todayStr
+    ).length
+  }
 
   const handleAdd = async (e) => {
     e.preventDefault()
@@ -247,6 +259,19 @@ export default function ManagePage() {
                 <option value="sd">Standar (SD)</option>
                 <option value="sj">Jumbo (SJ)</option>
               </select>
+
+              {/* Sort By Dropdown */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] transition-all cursor-pointer"
+              >
+                <option value="id-asc">Urutkan: ID (A-Z)</option>
+                <option value="id-desc">Urutkan: ID (Z-A)</option>
+                <option value="today-checkout">Urutkan: Keluar Hari Ini (Terbanyak)</option>
+                <option value="status">Urutkan: Status</option>
+                <option value="type">Urutkan: Jenis</option>
+              </select>
             </div>
           </div>
 
@@ -268,6 +293,7 @@ export default function ManagePage() {
                     <th className="px-4 py-3">ID Scooter</th>
                     <th className="px-4 py-3">Jenis</th>
                     <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Keluar Hari Ini</th>
                     <th className="px-4 py-3 text-right">Aksi</th>
                   </tr>
                 </thead>
@@ -315,6 +341,17 @@ export default function ManagePage() {
                             )}
                           </div>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                            getTodayCheckoutCount(scooter.id) > 0
+                              ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]'
+                              : 'bg-[var(--color-surface-3)] text-[var(--color-muted)]'
+                          }`}
+                        >
+                          {getTodayCheckoutCount(scooter.id)}x keluar
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
