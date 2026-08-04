@@ -1,13 +1,22 @@
 {
-  "name": "tracksepeda",
+  "name": "trackscooter",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node --watch server/server.js",
+    "dev:all": "node -e \"const{spawn}=require('child_process');const c=spawn('node',['--watch','server/server.js'],{stdio:'inherit'});const v=spawn('npx','vite',{stdio:'inherit',shell:true});process.on('SIGINT',()=>{c.kill();v.kill();process.exit()})\"",
     "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server:start": "node server/server.js",
+    "pm2:start": "npx pm2 start ecosystem.config.cjs",
+    "pm2:stop": "npx pm2 stop trackscooter-api",
+    "pm2:restart": "npx pm2 restart trackscooter-api",
+    "pm2:logs": "npx pm2 logs trackscooter-api"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -19,6 +28,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.17.0",
+    "sweetalert2": "^11.26.25",
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
@@ -30,6 +40,9 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
-    "vite": "^8.0.12"
+    "happy-dom": "^20.11.1",
+    "jsdom": "^30.0.0",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.10"
   }
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
 import { addScooter, deleteScooter, updateScooter, downloadScooterQR } from '../storage'
+import { showConfirmDialog, showPromptDialog, showErrorAlert } from '../utils/swal'
 
 export default function ManagePage() {
   const { scooters, loading, error: dbError, refresh } = useScooterData()
@@ -25,19 +26,27 @@ export default function ManagePage() {
       setType('sd')
       await refresh()
     } catch (err) {
-      setError(err.message || 'Gagal menambahkan sepeda.')
+      setError(err.message || 'Gagal menambahkan scooter.')
     } finally {
       setSubmitting(false)
     }
   }
 
   const handleDelete = async (id) => {
-    if (confirm(`Apakah Anda yakin ingin menghapus sepeda ${id}?`)) {
+    const res = await showConfirmDialog({
+      title: 'Hapus Unit Scooter?',
+      text: `Apakah Anda yakin ingin menghapus scooter ${id}? Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: 'Ya, Hapus Unit',
+      cancelText: 'Batal',
+      icon: 'warning'
+    })
+
+    if (res.isConfirmed) {
       try {
         await deleteScooter(id)
         await refresh()
       } catch (err) {
-        alert('Gagal menghapus sepeda: ' + err.message)
+        showErrorAlert('Gagal Hapus', err.message)
       }
     }
   }
@@ -48,9 +57,15 @@ export default function ManagePage() {
 
       if (newStatus === 'maintenance') {
         const current = scooters.find(s => s.id === id)
-        const note = prompt('Masukkan catatan perbaikan/maintenance (opsional):', current?.maintenanceNote || '')
-        if (note === null) return // User cancelled prompt
-        fields.maintenanceNote = note.trim()
+        const res = await showPromptDialog({
+          title: 'Catatan Maintenance',
+          text: `Masukkan catatan perbaikan untuk unit ${id} (opsional):`,
+          placeholder: 'Contoh: Rem belakang aus, ganti ban',
+          defaultValue: current?.maintenanceNote || ''
+        })
+
+        if (!res.isConfirmed) return // User cancelled prompt
+        fields.maintenanceNote = (res.value || '').trim()
       } else {
         fields.maintenanceNote = ''
       }
@@ -58,7 +73,7 @@ export default function ManagePage() {
       await updateScooter(id, fields)
       await refresh()
     } catch (err) {
-      alert('Gagal mengubah status sepeda: ' + err.message)
+      showErrorAlert('Gagal Ubah Status', err.message)
     }
   }
 
@@ -67,7 +82,7 @@ export default function ManagePage() {
       setDownloadingId(scooter.id)
       await downloadScooterQR(scooter)
     } catch (err) {
-      alert('Gagal mengunduh QR Code: ' + err.message)
+      showErrorAlert('Gagal Unduh QR Code', err.message)
     } finally {
       setDownloadingId(null)
     }
@@ -85,9 +100,9 @@ export default function ManagePage() {
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">
       {/* Header */}
       <div>
-        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Sepeda</h1>
+        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Scooter</h1>
         <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Tambah unit sepeda baru, ubah status unit, dan unduh QR code untuk operasional
+          Tambah unit scooter baru, ubah status unit, dan unduh QR code untuk operasional
         </p>
       </div>
 
@@ -138,7 +153,7 @@ export default function ManagePage() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-[var(--color-muted)]">ID Sepeda (Opsional)</label>
+              <label className="text-[11px] font-medium text-[var(--color-muted)]">ID Scooter (Opsional)</label>
               <div className="relative flex items-center">
                 <span className="absolute left-3 font-mono text-[13px] font-bold text-[var(--color-accent)] pointer-events-none select-none">
                   {type.toUpperCase()}-
@@ -158,7 +173,7 @@ export default function ManagePage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-[var(--color-muted)]">Jenis Sepeda</label>
+              <label className="text-[11px] font-medium text-[var(--color-muted)]">Jenis Scooter</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
@@ -182,7 +197,7 @@ export default function ManagePage() {
               ) : (
                 <>
                   <Plus size={15} />
-                  Tambah Sepeda
+                  Tambah Scooter
                 </>
               )}
             </button>
@@ -239,18 +254,18 @@ export default function ManagePage() {
             {loading && filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent mb-2" />
-                <p className="text-[13px] text-[var(--color-muted)]">Memuat data sepeda...</p>
+                <p className="text-[13px] text-[var(--color-muted)]">Memuat data scooter...</p>
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-12 text-center">
                 <Bike size={28} className="mb-2 text-[var(--color-border-2)]" />
-                <p className="text-[13px] text-[var(--color-muted)]">Tidak ada sepeda ditemukan.</p>
+                <p className="text-[13px] text-[var(--color-muted)]">Tidak ada scooter ditemukan.</p>
               </div>
             ) : (
               <table className="w-full border-collapse text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                    <th className="px-4 py-3">ID Sepeda</th>
+                    <th className="px-4 py-3">ID Scooter</th>
                     <th className="px-4 py-3">Jenis</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Aksi</th>

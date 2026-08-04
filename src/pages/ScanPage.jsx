@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, ImageUp, ArrowLeft, Hash } from 'lucide-react'
 import { toggleScooterStatus } from '../storage'
+import { showConfirmDialog } from '../utils/swal'
 import QRScanner from '../components/QRScanner'
 import QRImageUploader from '../components/QRImageUploader'
 import StatusToggleResult from '../components/StatusToggleResult'
@@ -27,12 +28,18 @@ export default function ScanPage() {
     try {
       const res = await toggleScooterStatus(scooterId)
       if (res.requiresConfirmation) {
-        const confirmed = window.confirm(res.message)
-        if (confirmed) {
+        const confirmRes = await showConfirmDialog({
+          title: 'Unit Dalam Maintenance',
+          text: res.message,
+          confirmText: 'Sewa Unit Ini',
+          cancelText: 'Batal',
+          icon: 'warning'
+        })
+
+        if (confirmRes.isConfirmed) {
           const forceRes = await toggleScooterStatus(scooterId, true)
           setResult(forceRes)
         } else {
-          // Add a short delay before re-enabling scanning to let user move the camera
           setTimeout(() => {
             setScanning(true)
           }, 800)
@@ -41,7 +48,7 @@ export default function ScanPage() {
         setResult(res)
       }
     } catch (err) {
-      setResult({ success: false, message: err.message || 'Gagal mengubah status sepeda.' })
+      setResult({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
     }
   }, [scanning, lastScanned])
 
@@ -71,9 +78,9 @@ export default function ScanPage() {
           <ArrowLeft size={13} />
           Kembali
         </button>
-        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Scan QR Sepeda</h1>
+        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Scan QR Scooter</h1>
         <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Pindai QR code untuk toggle status sepeda
+          Pindai QR code untuk toggle status scooter
         </p>
       </div>
 
@@ -105,7 +112,7 @@ export default function ScanPage() {
             </div>
             <div className="border-t border-[var(--color-border)] px-4 py-2.5">
               <p className="text-center text-[12px] text-[var(--color-muted)]">
-                Arahkan kamera ke QR code sepeda
+                Arahkan kamera ke QR code scooter
               </p>
             </div>
           </div>
@@ -182,14 +189,14 @@ function ManualInput({ onScan }) {
           underline underline-offset-2 transition-colors hover:text-[var(--color-muted)]"
       >
         <Hash size={11} />
-        Masukkan ID sepeda manual
+        Masukkan ID scooter manual
       </button>
     )
   }
 
   return (
     <div className="mt-5 space-y-2">
-      <p className="text-[11px] font-medium text-[var(--color-muted)]">ID Sepeda</p>
+      <p className="text-[11px] font-medium text-[var(--color-muted)]">ID Scooter</p>
       <div className="flex gap-2">
         <input
           value={val}
