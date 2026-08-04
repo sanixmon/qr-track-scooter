@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getScooters, getActivityLog } from '../storage'
 
 export function useScooterData() {
@@ -6,38 +6,38 @@ export function useScooterData() {
   const [activityLog, setActivityLog] = useState([])
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState(null)
+  const mountedRef = useRef(true)
 
-  const refresh = useCallback(async () => {
-    try {
-      setError(null)
-      const s = await getScooters()
-      const l = await getActivityLog()
-      setScooters(s)
-      setActivityLog(l)
-    } catch (err) {
-      console.error('Error reading local storage:', err)
-      setError(err.message || 'Gagal membaca data lokal.')
-    } finally {
-      setLoading(false)
+  const refresh = useCallback(() => {
+    const load = async () => {
+      try {
+        const [s, l] = await Promise.all([getScooters(), getActivityLog()])
+        if (mountedRef.current) {
+          setScooters(s)
+          setActivityLog(l)
+          setError(null)
+        }
+      } catch (err) {
+        console.error('Error fetching data:', err)
+        if (mountedRef.current) {
+          setError(err.message || 'Gagal membaca data.')
+        }
+      }
     }
+    load()
   }, [])
 
   useEffect(() => {
-    refresh()
-
-    // Listen for localStorage changes (same tab via custom events, other tabs via 'storage' event)
-    const handleChange = () => { refresh() }
-
-    window.addEventListener('trackbike:bikes-changed', handleChange)
-    window.addEventListener('trackbike:log-changed',   handleChange)
-    window.addEventListener('storage',                 handleChange)
-
-    return () => {
-      window.removeEventListener('trackbike:bikes-changed', handleChange)
-      window.removeEventListener('trackbike:log-changed',   handleChange)
-      window.removeEventListener('storage',                 handleChange)
-    }
-  }, [refresh])
+    mountedRef.current = true
+    getScooters()
+      .then(s => { if (mountedRef.current) setScooters(s) })
+      .catch(err => { if (mountedRef.current) setError(err.message || 'Gagal membaca data.') })
+    getActivityLog()
+      .then(l => { if (mountedRef.current) setActivityLog(l) })
+      .catch(() => {})
+      .finally(() => { if (mountedRef.current) setLoading(false) })
+    return () => { mountedRef.current = false }
+  }, [])
 
   return { scooters, activityLog, loading, error, refresh }
 }

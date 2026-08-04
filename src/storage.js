@@ -1,142 +1,91 @@
-// ── LocalStorage keys ─────────────────────────────────────
-const BIKES_KEY   = 'trackbike:bikes'
-const LOG_KEY     = 'trackbike:activity_log'
+const API = import.meta.env.VITE_API_URL || ''
 
-// ── Helpers ───────────────────────────────────────────────
-function loadBikes() {
-  try { return JSON.parse(localStorage.getItem(BIKES_KEY) || '[]') } catch { return [] }
+async function api(path, options = {}) {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+    ...options
+  }).catch(err => {
+    throw new Error(`Tidak dapat terhubung ke server API: ${err.message}`)
+  })
+
+  if (options.raw) return res
+
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `Permintaan gagal (${res.status})`)
+  return data
 }
 
-function saveBikes(bikes) {
-  localStorage.setItem(BIKES_KEY, JSON.stringify(bikes))
-  // Dispatch custom event so other tabs / components can react
-  window.dispatchEvent(new CustomEvent('trackbike:bikes-changed'))
+function mapScooterFromApi(s) {
+  return {
+    id: s.id,
+    type: s.type,
+    status: s.status,
+    maintenanceNote: s.maintenance_note ?? null,
+    lastUpdated: s.last_updated
+  }
 }
 
-function loadLog() {
-  try { return JSON.parse(localStorage.getItem(LOG_KEY) || '[]') } catch { return [] }
+function mapScooterToApi(fields) {
+  const out = {}
+  if ('status' in fields) out.status = fields.status
+  if ('maintenanceNote' in fields) out.maintenanceNote = fields.maintenanceNote ?? null
+  return out
 }
 
-function saveLog(log) {
-  localStorage.setItem(LOG_KEY, JSON.stringify(log))
-  window.dispatchEvent(new CustomEvent('trackbike:log-changed'))
+function mapLogFromApi(l) {
+  return {
+    id: l.id,
+    scooterId: l.scooter_id,
+    scooterType: l.scooter_type,
+    action: l.action,
+    timestamp: l.timestamp
+  }
 }
 
-// ── Bikes ──────────────────────────────────────────────────
 export async function getScooters() {
-  return loadBikes().sort((a, b) => a.id.localeCompare(b.id))
+  const data = await api('/api/scooters')
+  return data.map(mapScooterFromApi)
 }
 
 export async function addScooter({ id, type }) {
-  const bikes = loadBikes()
-  const prefix = `${type.toUpperCase()}-`
-  let finalId = id ? id.trim().toUpperCase() : ''
-
-  if (finalId) {
-    if (!finalId.startsWith(prefix)) {
-      const numericPart = finalId.replace(/\D/g, '')
-      if (numericPart) {
-        finalId = `${prefix}${numericPart.padStart(3, '0')}`
-      } else {
-        finalId = `${prefix}${finalId}`
-      }
-    }
-    if (bikes.find(b => b.id === finalId)) {
-      throw new Error(`ID "${finalId}" sudah terdaftar di sistem.`)
-    }
-  } else {
-    const sameType = bikes.filter(b => b.type === type)
-    const nums = sameType
-      .map(b => { const n = b.id.replace(prefix, ''); return parseInt(n, 10) })
-      .filter(n => !isNaN(n))
-    const next = nums.length ? Math.max(...nums) + 1 : 1
-    finalId = `${prefix}${String(next).padStart(3, '0')}`
-  }
-
-  const newBike = {
-    id: finalId,
-    type,
-    status: 'available',
-    maintenanceNote: null,
-    lastUpdated: new Date().toISOString()
-  }
-
-  bikes.push(newBike)
-  saveBikes(bikes)
-  return newBike
+  const data = await api('/api/scooters', {
+    method: 'POST',
+    body: JSON.stringify({ id, type })
+  })
+  return mapScooterFromApi(data)
 }
 
 export async function deleteScooter(id) {
-  const bikes = loadBikes().filter(b => b.id !== id)
-  saveBikes(bikes)
+  await api(`/api/scooters/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 export async function updateScooter(id, fields) {
-  const bikes = loadBikes()
-  const idx = bikes.findIndex(b => b.id === id)
-  if (idx === -1) throw new Error(`Sepeda "${id}" tidak ditemukan.`)
-
-  if ('status' in fields)          bikes[idx].status          = fields.status
-  if ('maintenanceNote' in fields) bikes[idx].maintenanceNote = fields.maintenanceNote ?? null
-  bikes[idx].lastUpdated = new Date().toISOString()
-
-  saveBikes(bikes)
-}
-
-// ── Activity log ───────────────────────────────────────────
-export async function getActivityLog() {
-  return loadLog().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 500)
-}
-
-// ── Toggle status ──────────────────────────────────────────
-export async function toggleScooterStatus(bikeId, forceMaintenance = false) {
-  const bikes = loadBikes()
-  const bike  = bikes.find(b => b.id === bikeId)
-
-  if (!bike) return { success: false, message: `Sepeda "${bikeId}" tidak ditemukan.` }
-
-  if (bike.status === 'maintenance' && !forceMaintenance) {
-    const noteText = bike.maintenanceNote ? `\nCatatan Perbaikan: "${bike.maintenanceNote}"` : ''
-    return {
-      success: false,
-      requiresConfirmation: true,
-      message: `Apakah Anda yakin akan menyewakan unit ${bike.id} yang sedang dalam maintenance?${noteText}`
-    }
-  }
-
-  const wasAvailable = bike.status === 'available' || bike.status === 'maintenance'
-  const nextStatus   = wasAvailable ? 'in-use' : 'available'
-
-  bike.status      = nextStatus
-  bike.lastUpdated = new Date().toISOString()
-  if (nextStatus === 'in-use') bike.maintenanceNote = null
-
-  saveBikes(bikes)
-
-  // Append to activity log
-  const log = loadLog()
-  log.push({
-    id:          `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    scooterId:   bikeId,
-    scooterType: bike.type,
-    action:      wasAvailable ? 'checkout' : 'return',
-    timestamp:   new Date().toISOString()
+  const data = await api(`/api/scooters/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(mapScooterToApi(fields))
   })
-  saveLog(log)
+  return mapScooterFromApi(data)
+}
 
-  const typeLabel = bike.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'
+export async function getActivityLog() {
+  const data = await api('/api/activity-log')
+  return data.map(mapLogFromApi)
+}
+
+export async function toggleScooterStatus(bikeId, forceMaintenance = false) {
+  const data = await api(`/api/scooters/${encodeURIComponent(bikeId)}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ forceMaintenance })
+  })
+
+  if (!data.success) return data
 
   return {
-    success: true,
-    scooter: { ...bike },
-    action:  wasAvailable ? 'checkout' : 'return',
-    message: wasAvailable
-      ? `Sepeda ${bike.id} (${typeLabel}) sekarang sedang digunakan.`
-      : `Sepeda ${bike.id} (${typeLabel}) telah dikembalikan.`
+    ...data,
+    scooter: data.scooter ? mapScooterFromApi(data.scooter) : undefined
   }
 }
 
-// ── QR download ────────────────────────────────────────────
 export async function downloadScooterQR(scooter) {
   const QRCode = (await import('qrcode')).default
   const dataUrl = await QRCode.toDataURL(scooter.id, {
@@ -151,17 +100,14 @@ export async function downloadScooterQR(scooter) {
   a.click()
 }
 
-// ── JSON export ────────────────────────────────────────────
 export async function exportData() {
   try {
-    const bikes       = await getScooters()
-    const activityLog = await getActivityLog()
-    const data        = { bikes, activityLog, exportedAt: new Date().toISOString() }
+    const data = await api('/api/export')
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
-    a.download = `tracksepeda-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `trackscooter-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
   } catch (err) {
