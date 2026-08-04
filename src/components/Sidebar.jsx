@@ -19,7 +19,7 @@ export default function Sidebar({ onClose }) {
             <Bike size={15} />
           </div>
           <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text)]">
-            TrackSepeda
+            TrackScooter
           </span>
         </div>
         <button

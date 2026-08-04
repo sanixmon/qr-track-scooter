@@ -2,10 +2,7 @@ import ScooterCard from './ScooterCard'
 
 export default function ScooterGrid({ scooters }) {
   return (
-    <div
-      className="grid gap-3"
-      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}
-    >
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
       {scooters.map(s => <ScooterCard key={s.id} scooter={s} />)}
     </div>
   )

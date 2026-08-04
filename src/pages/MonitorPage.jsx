@@ -305,7 +305,7 @@ export default function MonitorPage() {
                 {/* Scooter Grid */}
                 {filteredScooters.length === 0 ? (
                   <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-12 text-center text-[var(--color-muted)]">
-                    Tidak ada unit sepeda yang cocok dengan filter aktif.
+                    Tidak ada unit scooter yang cocok dengan filter aktif.
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">

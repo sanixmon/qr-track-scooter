@@ -56,7 +56,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-[20px] font-bold text-[var(--color-text)]">Dashboard</h1>
           <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-            Pantau status sepeda secara real-time
+            Pantau status scooter secara real-time
           </p>
         </div>
         <Link to="/scan">
@@ -114,7 +114,7 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
-                    Status Sepeda ({filteredScooters.length})
+                    Status Scooter ({filteredScooters.length})
                   </h2>
                   <div className="flex items-center gap-2">
                     {/* Status Filter */}
@@ -142,7 +142,7 @@ export default function DashboardPage() {
                 </div>
                 {filteredScooters.length === 0 ? (
                   <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center text-[12px] text-[var(--color-muted)]">
-                    Tidak ada sepeda yang cocok dengan filter status/jenis.
+                    Tidak ada scooter yang cocok dengan filter status/jenis.
                   </p>
                 ) : (
                   <ScooterGrid scooters={filteredScooters} />
@@ -204,7 +204,7 @@ export default function DashboardPage() {
                     <table className="w-full text-left text-[12px]">
                       <thead>
                         <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                          <th className="px-4 py-2.5">ID Sepeda</th>
+                          <th className="px-4 py-2.5">ID Scooter</th>
                           <th className="px-4 py-2.5">Jenis</th>
                           <th className="px-4 py-2.5">Status Baru</th>
                           <th className="px-4 py-2.5">Waktu</th>
