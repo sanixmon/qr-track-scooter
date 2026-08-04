@@ -1,15 +1,28 @@
 @import "tailwindcss";
 @import "sweetalert2/dist/sweetalert2.min.css";
 
-/* SweetAlert2 backdrop & z-index fix */
-body.swal2-shown {
-  overflow: hidden !important;
-}
-
-.swal2-container {
+/* Center Modals Backdrop */
+.swal2-container.swal2-center {
   z-index: 9999 !important;
   backdrop-filter: blur(4px);
-  background-color: rgba(0, 0, 0, 0.6) !important;
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Small Non-Blocking Corner Toast Notification */
+.swal2-container.swal2-top-end,
+.swal2-container.swal2-top-right,
+.swal2-container.swal2-top {
+  z-index: 9999 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.swal2-popup.swal2-toast {
+  pointer-events: auto !important;
+  max-width: 340px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4) !important;
 }
 
 @theme {

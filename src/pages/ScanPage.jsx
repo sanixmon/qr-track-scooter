@@ -24,12 +24,11 @@ export default function ScanPage() {
       text: res.message,
     })
 
-    if (isSuccess) {
-      navigate('/')
-    } else {
+    // Keep scanning active for continuous scanning without screen locking
+    setTimeout(() => {
       setScanning(true)
-    }
-  }, [navigate])
+    }, 1500)
+  }, [])
 
   const handleScan = useCallback(async (scooterId) => {
     if (!scanning) return
