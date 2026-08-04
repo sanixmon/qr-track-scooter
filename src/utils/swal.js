@@ -1,6 +1,33 @@
 import Swal from 'sweetalert2'
 import 'sweetalert2/dist/sweetalert2.min.css'
 
+export const Toast = Swal.mixin({
+  toast: true,
+  position: 'top-end',
+  showConfirmButton: false,
+  timer: 3000,
+  timerProgressBar: true,
+  background: 'var(--color-surface)',
+  color: 'var(--color-text)',
+  customClass: {
+    popup: 'rounded-xl border border-[var(--color-border-2)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-xl p-3.5 font-sans mt-2 mr-2',
+    title: 'text-[13px] font-bold text-[var(--color-text)]',
+    htmlContainer: 'text-[12px] text-[var(--color-muted)]',
+  },
+  didOpen: (toast) => {
+    toast.addEventListener('mouseenter', Swal.stopTimer)
+    toast.addEventListener('mouseleave', Swal.resumeTimer)
+  }
+})
+
+export const showToastNotification = ({ icon = 'success', title, text }) => {
+  return Toast.fire({
+    icon,
+    title,
+    text
+  })
+}
+
 export const MySwal = Swal.mixin({
   heightAuto: false,
   customClass: {
@@ -17,24 +44,11 @@ export const MySwal = Swal.mixin({
 })
 
 export const showSuccessAlert = (title, text) => {
-  return MySwal.fire({
-    icon: 'success',
-    title,
-    text,
-    timer: 3500,
-    timerProgressBar: true,
-    showConfirmButton: true,
-    confirmButtonText: 'OK'
-  })
+  return showToastNotification({ icon: 'success', title, text })
 }
 
 export const showErrorAlert = (title, text) => {
-  return MySwal.fire({
-    icon: 'error',
-    title,
-    text,
-    confirmButtonText: 'Tutup'
-  })
+  return showToastNotification({ icon: 'error', title, text })
 }
 
 export const showConfirmDialog = ({ title, text, confirmText = 'Ya, Lanjutkan', cancelText = 'Batal', icon = 'warning' }) => {

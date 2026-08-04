@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { MySwal } from '../utils/swal'
+import { showToastNotification } from '../utils/swal'
 
 export default function StatusToggleResult({ result, onClose }) {
   useEffect(() => {
@@ -8,15 +8,12 @@ export default function StatusToggleResult({ result, onClose }) {
     const isSuccess = result.success
     const isCheckout = result.action === 'checkout'
 
-    MySwal.fire({
+    showToastNotification({
       icon: isSuccess ? 'success' : 'error',
       title: isSuccess
         ? (isCheckout ? 'Scooter Diambil' : 'Scooter Dikembalikan')
         : 'Gagal',
       text: result.message,
-      confirmButtonText: 'OK',
-      timer: isSuccess ? 3500 : undefined,
-      timerProgressBar: isSuccess,
     }).then(() => {
       if (onClose) onClose()
     })

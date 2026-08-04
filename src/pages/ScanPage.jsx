@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, ImageUp, ArrowLeft, Hash } from 'lucide-react'
 import { toggleScooterStatus } from '../storage'
-import { MySwal, showConfirmDialog } from '../utils/swal'
+import { showToastNotification, showConfirmDialog } from '../utils/swal'
 import QRScanner from '../components/QRScanner'
 import QRImageUploader from '../components/QRImageUploader'
 
@@ -12,19 +12,16 @@ export default function ScanPage() {
   const [scanning, setScanning] = useState(true)
   const [lastScanned, setLastScanned] = useState({ id: '', time: 0 })
 
-  const showResultAlert = useCallback(async (res) => {
+  const showResultNotification = useCallback(async (res) => {
     const isSuccess = res.success
     const isCheckout = res.action === 'checkout'
 
-    await MySwal.fire({
+    showToastNotification({
       icon: isSuccess ? 'success' : 'error',
       title: isSuccess
         ? (isCheckout ? 'Scooter Diambil' : 'Scooter Dikembalikan')
         : 'Gagal',
       text: res.message,
-      confirmButtonText: 'OK',
-      timer: isSuccess ? 3000 : undefined,
-      timerProgressBar: isSuccess,
     })
 
     if (isSuccess) {
@@ -58,23 +55,23 @@ export default function ScanPage() {
 
         if (confirmRes.isConfirmed) {
           const forceRes = await toggleScooterStatus(scooterId, true)
-          await showResultAlert(forceRes)
+          await showResultNotification(forceRes)
         } else {
           setTimeout(() => {
             setScanning(true)
           }, 800)
         }
       } else {
-        await showResultAlert(res)
+        await showResultNotification(res)
       }
     } catch (err) {
-      await showResultAlert({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
+      await showResultNotification({ success: false, message: err.message || 'Gagal mengubah status scooter.' })
     }
-  }, [scanning, lastScanned, showResultAlert])
+  }, [scanning, lastScanned, showResultNotification])
 
   const handleError = useCallback((msg) => {
-    showResultAlert({ success: false, message: msg })
-  }, [showResultAlert])
+    showResultNotification({ success: false, message: msg })
+  }, [showResultNotification])
 
   const reset = () => { setMode(null); setScanning(true) }
 
