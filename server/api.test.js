@@ -242,3 +242,18 @@ describe('migrateUnpaddedIds migration', () => {
     expect(log.scooter_id).toBe('SD-88')
   })
 })
+
+// ── Backup Tests ───────────────────────────────────────────
+describe('POST & GET /api/backup', () => {
+  it('triggers DB backup creation', async () => {
+    const { status, data } = await api('POST', '/api/backup')
+    expect(status).toBe(200)
+    expect(data.success).toBe(true)
+    expect(data.filename).toBeDefined()
+  })
+
+  it('downloads DB backup file', async () => {
+    const res = await fetch(`${BASE}/api/backup/download`)
+    expect(res.status).toBe(200)
+  })
+})

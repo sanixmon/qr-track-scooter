@@ -3,7 +3,7 @@ import cors from 'cors'
 import db from './db.js'
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3005
 
 app.use(cors())
 app.use(express.json())
@@ -162,6 +162,26 @@ app.get('/api/activity-log', (req, res) => {
     'SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 500'
   ).all()
   res.json(rows)
+})
+
+import { createDatabaseBackup } from './backup.js'
+
+app.post('/api/backup', async (req, res, next) => {
+  try {
+    const result = await createDatabaseBackup()
+    res.json({ success: true, ...result })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/api/backup/download', async (req, res, next) => {
+  try {
+    const result = await createDatabaseBackup()
+    res.download(result.path, result.filename)
+  } catch (err) {
+    next(err)
+  }
 })
 
 app.get('/api/export', (req, res) => {

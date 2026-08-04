@@ -100,6 +100,24 @@ export async function downloadScooterQR(scooter) {
   a.click()
 }
 
+export async function downloadDatabaseBackup() {
+  try {
+    const response = await fetch('/api/backup/download')
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `trackscooter_backup_${new Date().toISOString().slice(0, 10)}.db`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    throw new Error('Gagal mengunduh backup database: ' + err.message)
+  }
+}
+
 export async function exportData() {
   try {
     const data = await api('/api/export')

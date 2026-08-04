@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert } from 'lucide-react'
+import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
-import { addScooter, deleteScooter, updateScooter, downloadScooterQR } from '../storage'
-import { showConfirmDialog, showPromptDialog, showErrorAlert } from '../utils/swal'
+import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadDatabaseBackup } from '../storage'
+import { showConfirmDialog, showPromptDialog, showErrorAlert, showToastNotification } from '../utils/swal'
 
 export default function ManagePage() {
   const { scooters, activityLog, loading, error: dbError, refresh } = useScooterData()
@@ -15,6 +15,19 @@ export default function ManagePage() {
   const [error, setError] = useState('')
   const [downloadingId, setDownloadingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
+
+  const handleBackup = async () => {
+    try {
+      setBackingUp(true)
+      await downloadDatabaseBackup()
+      showToastNotification({ icon: 'success', title: 'Backup DB Berhasil' })
+    } catch (err) {
+      showErrorAlert('Gagal Backup', err.message)
+    } finally {
+      setBackingUp(false)
+    }
+  }
 
   // Calculate today's checkout frequency per scooter
   const getTodayCheckoutCount = (scooterId) => {
@@ -141,11 +154,30 @@ export default function ManagePage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">
       {/* Header */}
-      <div>
-        <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Scooter</h1>
-        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
-          Tambah unit scooter baru, ubah status unit, dan unduh QR code untuk operasional
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold text-[var(--color-text)]">Kelola Scooter</h1>
+          <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
+            Tambah unit scooter baru, ubah status unit, dan unduh QR code untuk operasional
+          </p>
+        </div>
+        <button
+          onClick={handleBackup}
+          disabled={backingUp}
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-[12px] font-semibold text-[var(--color-text)] shadow-sm transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {backingUp ? (
+            <>
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+              Mengunduh Backup...
+            </>
+          ) : (
+            <>
+              <Database size={15} className="text-[var(--color-accent)]" />
+              Backup Basis Data
+            </>
+          )}
+        </button>
       </div>
 
       {dbError && scooters.length === 0 ? (

@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server:start": "node server/server.js",
+    "db:backup": "node server/backup.js",
     "pm2:start": "npx pm2 start ecosystem.config.cjs",
     "pm2:stop": "npx pm2 stop trackscooter-api",
     "pm2:restart": "npx pm2 restart trackscooter-api",
