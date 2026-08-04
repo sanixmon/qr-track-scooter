@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { app } from './server.js'
-import db from './db.js'
+import db, { migrateUnpaddedIds } from './db.js'
 
 const BASE = 'http://localhost:3091'
 
@@ -222,5 +222,23 @@ describe('Malicious input handling (Worst Case)', () => {
     await api('POST', '/api/scooters', { id: 'SD-20', type: 'sd' })
     const { data } = await api('PATCH', '/api/scooters/SD-20', { status: 'maintenance', maintenanceNote: '<script>alert("xss")</script>' })
     expect(data.maintenance_note).toBe('<script>alert("xss")</script>')
+  })
+})
+
+// ── DB Migration Tests ─────────────────────────────────────
+describe('migrateUnpaddedIds migration', () => {
+  it('converts legacy zero-padded scooter IDs and activity logs to unpadded integers', () => {
+    db.prepare("INSERT INTO scooters (id, type, status) VALUES ('SD-088', 'sd', 'available')").run()
+    db.prepare("INSERT INTO activity_log (id, scooter_id, scooter_type, action) VALUES ('mig-log-1', 'SD-088', 'sd', 'checkout')").run()
+
+    migrateUnpaddedIds(db)
+
+    const scooter = db.prepare("SELECT * FROM scooters WHERE id = 'SD-88'").get()
+    expect(scooter).toBeDefined()
+    expect(scooter.id).toBe('SD-88')
+
+    const log = db.prepare("SELECT * FROM activity_log WHERE id = 'mig-log-1'").get()
+    expect(log).toBeDefined()
+    expect(log.scooter_id).toBe('SD-88')
   })
 })

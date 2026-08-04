@@ -100,13 +100,43 @@ export default function ManagePage() {
     }
   }
 
-  // Filter scooters
-  const filtered = scooters.filter((s) => {
-    const matchesSearch = s.id.toLowerCase().includes(search.toLowerCase())
-    const matchesType = filterType === 'all' || s.type === filterType
-    const matchesStatus = filterStatus === 'all' || s.status === filterStatus
-    return matchesSearch && matchesType && matchesStatus
-  })
+  // Filter and sort scooters
+  const filtered = scooters
+    .filter((s) => {
+      const matchesSearch = s.id.toLowerCase().includes(search.toLowerCase())
+      const matchesType = filterType === 'all' || s.type === filterType
+      const matchesStatus = filterStatus === 'all' || s.status === filterStatus
+      return matchesSearch && matchesType && matchesStatus
+    })
+    .sort((a, b) => {
+      if (sortBy === 'id-asc') {
+        const numA = parseInt(a.id.replace(/\D/g, ''), 10) || 0
+        const numB = parseInt(b.id.replace(/\D/g, ''), 10) || 0
+        const prefixA = a.id.replace(/\d/g, '')
+        const prefixB = b.id.replace(/\d/g, '')
+        if (prefixA !== prefixB) return prefixA.localeCompare(prefixB)
+        return numA - numB
+      }
+      if (sortBy === 'id-desc') {
+        const numA = parseInt(a.id.replace(/\D/g, ''), 10) || 0
+        const numB = parseInt(b.id.replace(/\D/g, ''), 10) || 0
+        const prefixA = a.id.replace(/\d/g, '')
+        const prefixB = b.id.replace(/\d/g, '')
+        if (prefixA !== prefixB) return prefixB.localeCompare(prefixA)
+        return numB - numA
+      }
+      if (sortBy === 'today-checkout') {
+        return getTodayCheckoutCount(b.id) - getTodayCheckoutCount(a.id)
+      }
+      if (sortBy === 'status') {
+        const order = { available: 1, 'in-use': 2, maintenance: 3 }
+        return (order[a.status] || 99) - (order[b.status] || 99)
+      }
+      if (sortBy === 'type') {
+        return a.type.localeCompare(b.type)
+      }
+      return 0
+    })
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">

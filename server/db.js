@@ -34,30 +34,47 @@ db.exec(`
   );
 `)
 
-function migrateUnpaddedIds(dbInstance) {
+export function migrateUnpaddedIds(dbInstance) {
   try {
     const scooters = dbInstance.prepare("SELECT id FROM scooters WHERE id LIKE '%-0%'").all()
-    if (!scooters || scooters.length === 0) return
+    const logs = dbInstance.prepare("SELECT DISTINCT scooter_id FROM activity_log WHERE scooter_id LIKE '%-0%'").all()
+    if ((!scooters || scooters.length === 0) && (!logs || logs.length === 0)) return
 
     const updateScooter = dbInstance.prepare("UPDATE scooters SET id = ? WHERE id = ?")
     const updateLog = dbInstance.prepare("UPDATE activity_log SET scooter_id = ? WHERE scooter_id = ?")
+    const checkExists = dbInstance.prepare("SELECT COUNT(*) as count FROM scooters WHERE id = ?")
 
-    const transaction = dbInstance.transaction((rows) => {
-      for (const row of rows) {
+    const transaction = dbInstance.transaction(() => {
+      for (const row of scooters) {
         const parts = row.id.split('-')
         if (parts.length === 2) {
           const prefix = parts[0]
           const num = parseInt(parts[1], 10)
           if (!isNaN(num)) {
             const newId = `${prefix}-${num}`
-            updateScooter.run(newId, row.id)
+            const exists = checkExists.get(newId)?.count > 0
+            if (!exists) {
+              updateScooter.run(newId, row.id)
+            }
             updateLog.run(newId, row.id)
+          }
+        }
+      }
+
+      for (const log of logs) {
+        const parts = log.scooter_id.split('-')
+        if (parts.length === 2) {
+          const prefix = parts[0]
+          const num = parseInt(parts[1], 10)
+          if (!isNaN(num)) {
+            const newId = `${prefix}-${num}`
+            updateLog.run(newId, log.scooter_id)
           }
         }
       }
     })
 
-    transaction(scooters)
+    transaction()
   } catch (err) {
     console.error('Migration error:', err)
   }
