@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database, FolderArchive } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
 import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadAllScooterQRs, downloadDatabaseBackup } from '../storage'
-import { showConfirmDialog, showPromptDialog, showErrorAlert, showToastNotification } from '../utils/swal'
+import { showConfirmDialog, showPromptDialog, showMaintenanceDialog, showErrorAlert, showToastNotification } from '../utils/swal'
 
 export default function ManagePage() {
   const { scooters, activityLog, loading, error: dbError, refresh } = useScooterData()
@@ -83,14 +83,25 @@ export default function ManagePage() {
 
       if (newStatus === 'maintenance') {
         const current = scooters.find(s => s.id === id)
-        const res = await showPromptDialog({
-          title: 'Catatan Maintenance',
-          text: `Masukkan catatan perbaikan untuk unit ${id} (opsional):`,
-          placeholder: 'Contoh: Rem belakang aus, ganti ban',
+        const res = await showMaintenanceDialog({
+          title: 'Mulai Maintenance',
+          text: `Catat lokasi dan kendala untuk unit ${id} agar tim perbaikan dapat bertindak.`,
           defaultValue: current?.maintenanceNote || ''
         })
 
         if (!res.isConfirmed) return // User cancelled prompt
+        fields.location = res.value.location
+        fields.issue = res.value.issue
+        fields.note = res.value.note || ''
+        fields.maintenanceNote = res.value.issue
+      } else if (newStatus === 'rusak') {
+        const res = await showPromptDialog({
+          title: 'Catatan Kerusakan',
+          text: `Masukkan catatan kerusakan untuk unit ${id} (opsional):`,
+          placeholder: 'Contoh: Tidak menyala, baterai drop',
+          defaultValue: ''
+        })
+        if (!res.isConfirmed) return
         fields.maintenanceNote = (res.value || '').trim()
       } else {
         fields.maintenanceNote = ''
@@ -155,7 +166,7 @@ export default function ManagePage() {
         return getTodayCheckoutCount(b.id) - getTodayCheckoutCount(a.id)
       }
       if (sortBy === 'status') {
-        const order = { available: 1, 'in-use': 2, maintenance: 3 }
+        const order = { available: 1, 'in-use': 2, rusak: 3, maintenance: 4 }
         return (order[a.status] || 99) - (order[b.status] || 99)
       }
       if (sortBy === 'type') {
@@ -339,7 +350,8 @@ export default function ManagePage() {
               >
                 <option value="all">Semua Status</option>
                 <option value="available">Tersedia</option>
-                <option value="in-use">Disewakan</option>
+                <option value="in-use">Online</option>
+                <option value="rusak">Offline / Rusak</option>
                 <option value="maintenance">Maintenance</option>
               </select>
 
@@ -410,9 +422,9 @@ export default function ManagePage() {
                       </td>
                       <td className="px-4 py-3">
                         {scooter.status === 'in-use' ? (
-                          <div className="inline-flex items-center gap-1 rounded border border-[var(--color-red-ring)] bg-[var(--color-surface-3)] px-2 py-1 text-[12px] font-medium text-[var(--color-red)]">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-red)] dot-pulse" />
-                            Digunakan
+                          <div className="inline-flex items-center gap-1 rounded border border-[var(--color-accent-ring)] bg-[var(--color-surface-3)] px-2 py-1 text-[12px] font-medium text-[var(--color-accent)]">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] dot-pulse" />
+                            Online
                           </div>
                         ) : (
                           <div className="flex flex-col items-start">
@@ -422,13 +434,16 @@ export default function ManagePage() {
                               className={`rounded border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2 py-1 text-[12px] font-medium outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer transition-all ${
                                 scooter.status === 'available'
                                   ? 'text-[var(--color-green)] border-[var(--color-green-ring)]'
-                                  : 'text-[var(--color-warning)] border-[var(--color-warning-ring)]'
+                                  : scooter.status === 'rusak'
+                                    ? 'text-[var(--color-red)] border-[var(--color-red-ring)]'
+                                    : 'text-[var(--color-warning)] border-[var(--color-warning-ring)]'
                               }`}
                             >
                               <option value="available">Tersedia</option>
+                              <option value="rusak">Offline / Rusak</option>
                               <option value="maintenance">Maintenance</option>
                             </select>
-                            {scooter.status === 'maintenance' && scooter.maintenanceNote && (
+                            {(scooter.status === 'maintenance' || scooter.status === 'rusak') && scooter.maintenanceNote && (
                               <p className="mt-1 max-w-[200px] break-words text-[11px] italic text-[var(--color-muted)] leading-tight">
                                 Catatan: {scooter.maintenanceNote}
                               </p>

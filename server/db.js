@@ -20,7 +20,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS scooters (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL CHECK(type IN ('sd', 'sj')),
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'in-use', 'maintenance')),
+    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'in-use', 'rusak', 'maintenance')),
     maintenance_note TEXT,
     last_updated TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -32,6 +32,70 @@ db.exec(`
     action TEXT NOT NULL CHECK(action IN ('checkout', 'return')),
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
   );
+`)
+
+/**
+ * Migrate legacy scooters tables that only knew 3 statuses
+ * ('available', 'in-use', 'maintenance') to also allow 'rusak'.
+ * SQLite cannot ALTER a CHECK constraint, so the table is rebuilt.
+ */
+export function migrateAddRusakStatus(dbInstance) {
+  try {
+    const table = dbInstance.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scooters'"
+    ).get()
+
+    if (!table || !table.sql) return
+    if (table.sql.includes("'rusak'")) return // already migrated
+
+    dbInstance.exec(`
+      BEGIN;
+      CREATE TABLE scooters_new (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK(type IN ('sd', 'sj')),
+        status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'in-use', 'rusak', 'maintenance')),
+        maintenance_note TEXT,
+        last_updated TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO scooters_new (id, type, status, maintenance_note, last_updated)
+        SELECT id, type, status, maintenance_note, last_updated FROM scooters;
+      DROP TABLE scooters;
+      ALTER TABLE scooters_new RENAME TO scooters;
+      COMMIT;
+    `)
+  } catch (err) {
+    console.error('Migration error (add rusak status):', err)
+  }
+}
+
+migrateAddRusakStatus(db)
+
+db.exec(`
+  -- Per-unit device condition checklist (status router)
+  CREATE TABLE IF NOT EXISTS device_conditions (
+    scooter_id TEXT PRIMARY KEY REFERENCES scooters(id) ON DELETE CASCADE,
+    setelan TEXT CHECK(setelan IN ('ada', 'tidak')),
+    lampu TEXT CHECK(lampu IN ('nyala', 'redup')),
+    baterai TEXT CHECK(baterai IN ('normal', 'drop')),
+    monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6')),
+    rem TEXT CHECK(rem IN ('normal', 'rusak')),
+    ban TEXT CHECK(ban IN ('normal', 'rusak')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Maintenance tracking: location (outlet/luar) + issue + status
+  CREATE TABLE IF NOT EXISTS maintenance_records (
+    id TEXT PRIMARY KEY,
+    scooter_id TEXT NOT NULL REFERENCES scooters(id) ON DELETE CASCADE,
+    location TEXT NOT NULL CHECK(location IN ('outlet', 'luar')),
+    issue TEXT,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'repair' CHECK(status IN ('repair', 'done')),
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_maintenance_scooter ON maintenance_records(scooter_id);
 `)
 
 export function migrateUnpaddedIds(dbInstance) {

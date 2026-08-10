@@ -93,11 +93,18 @@ export default function MonitorPage() {
       label: 'Tersedia'
     },
     'in-use': {
+      bg: 'bg-[var(--color-accent-subtle)]',
+      border: 'border-[var(--color-accent-ring)]',
+      dot: 'bg-[var(--color-accent)] dot-pulse',
+      text: 'text-[var(--color-accent)]',
+      label: 'Online'
+    },
+    rusak: {
       bg: 'bg-[var(--color-red-subtle)]',
       border: 'border-[var(--color-red-ring)]',
       dot: 'bg-[var(--color-red)] dot-pulse',
       text: 'text-[var(--color-red)]',
-      label: 'Disewakan'
+      label: 'Offline / Rusak'
     },
     maintenance: {
       bg: 'bg-[var(--color-warning-subtle)]',
@@ -288,7 +295,8 @@ export default function MonitorPage() {
                     <div className="flex flex-wrap gap-2">
                       <FilterTab label="Semua Status" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} count={scooters.length} />
                       <FilterTab label="Tersedia" active={statusFilter === 'available'} onClick={() => setStatusFilter('available')} colorClass="text-[var(--color-green)]" count={scooters.filter(s => s.status === 'available').length} />
-                      <FilterTab label="Disewakan" active={statusFilter === 'in-use'} onClick={() => setStatusFilter('in-use')} colorClass="text-[var(--color-red)]" count={scooters.filter(s => s.status === 'in-use').length} />
+                      <FilterTab label="Online" active={statusFilter === 'in-use'} onClick={() => setStatusFilter('in-use')} colorClass="text-[var(--color-accent)]" count={scooters.filter(s => s.status === 'in-use').length} />
+                      <FilterTab label="Rusak" active={statusFilter === 'rusak'} onClick={() => setStatusFilter('rusak')} colorClass="text-[var(--color-red)]" count={scooters.filter(s => s.status === 'rusak').length} />
                       <FilterTab label="Maintenance" active={statusFilter === 'maintenance'} onClick={() => setStatusFilter('maintenance')} colorClass="text-[var(--color-warning)]" count={scooters.filter(s => s.status === 'maintenance').length} />
                     </div>
                   </div>
@@ -321,9 +329,9 @@ export default function MonitorPage() {
                             <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${conf.dot}`} />
                             <span className={`text-[12px] font-bold uppercase tracking-wider ${conf.text}`}>{conf.label}</span>
                           </div>
-                          {scooter.status === 'maintenance' && scooter.maintenanceNote && (
-                            <div className="flex gap-1.5 rounded-lg bg-[var(--color-surface-3)] p-2 text-[11px] text-[var(--color-muted)] italic leading-normal border border-[var(--color-border)]">
-                              <ShieldAlert size={13} className="shrink-0 text-[var(--color-warning)]" />
+                          {(scooter.status === 'maintenance' || scooter.status === 'rusak') && scooter.maintenanceNote && (
+                            <div className={`flex gap-1.5 rounded-lg bg-[var(--color-surface-3)] p-2 text-[11px] text-[var(--color-muted)] italic leading-normal border border-[var(--color-border)] ${scooter.status === 'rusak' ? 'border-[var(--color-red-ring)]' : ''}`}>
+                              <ShieldAlert size={13} className={`shrink-0 ${scooter.status === 'rusak' ? 'text-[var(--color-red)]' : 'text-[var(--color-warning)]'}`} />
                               <span>{scooter.maintenanceNote}</span>
                             </div>
                           )}

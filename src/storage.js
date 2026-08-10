@@ -21,7 +21,9 @@ function mapScooterFromApi(s) {
     type: s.type,
     status: s.status,
     maintenanceNote: s.maintenance_note ?? null,
-    lastUpdated: s.last_updated
+    lastUpdated: s.last_updated,
+    deviceCondition: s.device_condition ?? null,
+    activeMaintenance: s.active_maintenance ?? null
   }
 }
 
@@ -29,6 +31,9 @@ function mapScooterToApi(fields) {
   const out = {}
   if ('status' in fields) out.status = fields.status
   if ('maintenanceNote' in fields) out.maintenanceNote = fields.maintenanceNote ?? null
+  if ('location' in fields) out.location = fields.location
+  if ('issue' in fields) out.issue = fields.issue
+  if ('note' in fields) out.note = fields.note
   return out
 }
 
@@ -39,6 +44,20 @@ function mapLogFromApi(l) {
     scooterType: l.scooter_type,
     action: l.action,
     timestamp: l.timestamp
+  }
+}
+
+function mapMaintenanceFromApi(m) {
+  return {
+    id: m.id,
+    scooterId: m.scooter_id,
+    scooterType: m.scooter_type,
+    location: m.location,
+    issue: m.issue,
+    note: m.note,
+    status: m.status,
+    startedAt: m.started_at,
+    resolvedAt: m.resolved_at
   }
 }
 
@@ -70,6 +89,26 @@ export async function updateScooter(id, fields) {
 export async function getActivityLog() {
   const data = await api('/api/activity-log')
   return data.map(mapLogFromApi)
+}
+
+export async function saveDeviceCondition(scooterId, condition) {
+  const data = await api(`/api/scooters/${encodeURIComponent(scooterId)}/device-condition`, {
+    method: 'PUT',
+    body: JSON.stringify(condition)
+  })
+  return data.device_condition
+}
+
+export async function getMaintenanceRecords() {
+  const data = await api('/api/maintenance-records')
+  return data.map(mapMaintenanceFromApi)
+}
+
+export async function completeMaintenanceRecord(recordId) {
+  const data = await api(`/api/maintenance-records/${encodeURIComponent(recordId)}/complete`, {
+    method: 'POST'
+  })
+  return data
 }
 
 export async function toggleScooterStatus(bikeId, forceMaintenance = false) {
@@ -181,4 +220,48 @@ export async function exportData() {
   } catch (err) {
     alert('Gagal mengekspor data: ' + err.message)
   }
+}
+
+// ── Excel Export (per unit history) ────────────────────────
+function excelDate(ts) {
+  try {
+    return new Date(ts).toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })
+  } catch {
+    return ts || '-'
+  }
+}
+
+export async function exportScooterHistoryToExcel(scooter, logEntries, maintenanceRecords = []) {
+  const { utils, writeFile } = await import('xlsx')
+
+  const historyRows = logEntries.map(e => ({
+    'Tanggal': excelDate(e.timestamp),
+    'Aksi': e.action === 'checkout' ? 'Keluar (Sewa)' : 'Masuk (Kembali)',
+    'Jenis': e.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)',
+  }))
+
+  const maintenanceRows = maintenanceRecords.map(m => ({
+    'Mulai': excelDate(m.startedAt),
+    'Lokasi': m.location === 'outlet' ? 'Di Outlet' : 'Keluar / Luar',
+    'Kendala': m.issue || '-',
+    'Catatan': m.note || '-',
+    'Status': m.status === 'done' ? 'Selesai' : 'Dalam Perbaikan',
+    'Selesai': m.resolvedAt ? excelDate(m.resolvedAt) : '-'
+  }))
+
+  const wb = utils.book_new()
+  const wsHistory = utils.json_to_sheet(
+    historyRows.length ? historyRows : [{ 'Tanggal': '-', 'Aksi': 'Belum ada aktivitas', 'Jenis': '-' }]
+  )
+  utils.book_append_sheet(wb, wsHistory, 'Riwayat Unit')
+
+  const wsMaint = utils.json_to_sheet(
+    maintenanceRows.length ? maintenanceRows : [{ 'Mulai': '-', 'Lokasi': '-', 'Kendala': '-', 'Catatan': '-', 'Status': '-', 'Selesai': '-' }]
+  )
+  utils.book_append_sheet(wb, wsMaint, 'Riwayat Maintenance')
+
+  const filename = `Riwayat-${scooter.id}-${new Date().toISOString().slice(0, 10)}.xlsx`
+  writeFile(wb, filename)
 }

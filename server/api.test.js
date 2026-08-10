@@ -135,6 +135,95 @@ describe('PATCH /api/scooters/:id', () => {
     const { data } = await api('PATCH', '/api/scooters/SD-5', { status: 'maintenance' })
     expect(data.maintenance_note).toBeNull()
   })
+
+  it('supports rusak (offline) status', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-30', type: 'sd' })
+    const { data } = await api('PATCH', '/api/scooters/SD-30', { status: 'rusak', maintenanceNote: 'Tidak menyala' })
+    expect(data.status).toBe('rusak')
+    expect(data.maintenance_note).toBe('Tidak menyala')
+
+    const { data: list } = await api('GET', '/api/scooters')
+    const s = list.find(x => x.id === 'SD-30')
+    expect(s.status).toBe('rusak')
+  })
+})
+
+// ── Device Condition ───────────────────────────────────────
+describe('PUT /api/scooters/:id/device-condition', () => {
+  it('saves device condition and exposes it via GET /api/scooters', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-40', type: 'sd' })
+    const { status, data } = await api('PUT', '/api/scooters/SD-40/device-condition', {
+      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'rusak'
+    })
+    expect(status).toBe(200)
+    expect(data.success).toBe(true)
+    expect(data.device_condition.baterai).toBe('drop')
+    expect(data.device_condition.monitor).toBe('e4')
+
+    const { data: list } = await api('GET', '/api/scooters')
+    const s = list.find(x => x.id === 'SD-40')
+    expect(s.device_condition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4', ban: 'rusak' }))
+  })
+
+  it('rejects invalid values (Worst Case)', async () => {
+    const { status, data } = await api('PUT', '/api/scooters/SD-40/device-condition', { baterai: 'meledak' })
+    expect(status).toBe(400)
+    expect(data.error).toMatch(/baterai/)
+  })
+
+  it('returns 404 for non-existent scooter (Worst Case)', async () => {
+    const { status } = await api('PUT', '/api/scooters/GHOST/device-condition', { baterai: 'normal' })
+    expect(status).toBe(404)
+  })
+})
+
+// ── Maintenance Records ─────────────────────────────────────
+describe('maintenance records lifecycle', () => {
+  it('creates an open record when scooter goes to maintenance with location', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-50', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-50', { status: 'maintenance', location: 'luar', issue: 'Baterai drop' })
+
+    const { data } = await api('GET', '/api/maintenance-records')
+    const rec = data.find(r => r.scooter_id === 'SD-50')
+    expect(rec).toBeDefined()
+    expect(rec.location).toBe('luar')
+    expect(rec.issue).toBe('Baterai drop')
+    expect(rec.status).toBe('repair')
+
+    const { data: scooters } = await api('GET', '/api/scooters')
+    const s = scooters.find(x => x.id === 'SD-50')
+    expect(s.active_maintenance).toEqual(expect.objectContaining({ location: 'luar', issue: 'Baterai drop' }))
+  })
+
+  it('closes open records when scooter leaves maintenance', async () => {
+    await api('PATCH', '/api/scooters/SD-50', { status: 'available' })
+
+    const { data } = await api('GET', '/api/maintenance-records')
+    const rec = data.find(r => r.scooter_id === 'SD-50')
+    expect(rec.status).toBe('done')
+    expect(rec.resolved_at).toBeDefined()
+  })
+
+  it('completes a repair and restores scooter to available', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-51', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-51', { status: 'maintenance', location: 'outlet', issue: 'Rem blong' })
+
+    const { data: list } = await api('GET', '/api/maintenance-records')
+    const rec = list.find(r => r.scooter_id === 'SD-51')
+
+    const { status, data } = await api('POST', `/api/maintenance-records/${rec.id}/complete`)
+    expect(status).toBe(200)
+    expect(data.success).toBe(true)
+
+    const { data: scooters } = await api('GET', '/api/scooters')
+    const s = scooters.find(x => x.id === 'SD-51')
+    expect(s.status).toBe('available')
+  })
+
+  it('returns 404 when completing unknown record (Worst Case)', async () => {
+    const { status } = await api('POST', '/api/maintenance-records/GHOST/complete')
+    expect(status).toBe(404)
+  })
 })
 
 // ── Toggle ─────────────────────────────────────────────────
@@ -152,6 +241,38 @@ describe('POST /api/scooters/:id/toggle', () => {
     expect(data.success).toBe(false)
     expect(data.requiresConfirmation).toBe(true)
     expect(data.message).toContain('Ban Bocor')
+  })
+
+  it('blocks checkout when rusak (offline) (Worst Case)', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-13', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-13', { status: 'rusak', maintenanceNote: 'Tidak menyala' })
+    const { data } = await api('POST', '/api/scooters/SD-13/toggle', {})
+    expect(data.success).toBe(false)
+    expect(data.requiresConfirmation).toBe(true)
+    expect(data.message).toMatch(/rusak/)
+    expect(data.message).toContain('Tidak menyala')
+  })
+
+  it('allows rusak unit checkout with force flag', async () => {
+    const { data } = await api('POST', '/api/scooters/SD-13/toggle', { forceMaintenance: true })
+    expect(data.success).toBe(true)
+    expect(data.action).toBe('checkout')
+    expect(data.scooter.status).toBe('in-use')
+  })
+
+  it('closes open maintenance record when unit is force-checked-out (Worst Case)', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-14', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-14', { status: 'maintenance', location: 'luar', issue: 'Lampu redup' })
+    await api('POST', '/api/scooters/SD-14/toggle', { forceMaintenance: true })
+
+    const { data: records } = await api('GET', '/api/maintenance-records')
+    const rec = records.find(r => r.scooter_id === 'SD-14')
+    expect(rec.status).toBe('done')
+    expect(rec.resolved_at).toBeDefined()
+
+    const { data: scooters } = await api('GET', '/api/scooters')
+    const s = scooters.find(x => x.id === 'SD-14')
+    expect(s.active_maintenance).toBeNull()
   })
 
   it('allows checkout with forceMaintenance flag', async () => {

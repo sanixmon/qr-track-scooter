@@ -8,14 +8,23 @@ import {
 } from './storage'
 
 // ── In-memory store mimicking the SQLite backend ────────────
-const store = { scooters: [], activityLog: [] }
+const store = { scooters: [], activityLog: [], deviceConditions: {}, maintenanceRecords: [] }
 
 let seq = 0
 
 function apiHandler(method, path, body) {
   switch (true) {
     case method === 'GET' && path === '/api/scooters':
-      return { ok: true, body: [...store.scooters].sort((a, b) => a.id.localeCompare(b.id)) }
+      return {
+        ok: true,
+        body: [...store.scooters]
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map(s => ({
+            ...s,
+            device_condition: store.deviceConditions[s.id] || null,
+            active_maintenance: store.maintenanceRecords.find(r => r.scooter_id === s.id && r.status === 'repair') || null
+          }))
+      }
 
     case method === 'POST' && path === '/api/scooters': {
       const { id, type } = body
@@ -63,8 +72,50 @@ function apiHandler(method, path, body) {
       if (idx === -1) return { ok: false, status: 404, body: { error: `Scooter "${id}" tidak ditemukan.` } }
       if ('status' in body) store.scooters[idx].status = body.status
       if ('maintenanceNote' in body) store.scooters[idx].maintenance_note = body.maintenanceNote ?? null
+      if (body.status === 'maintenance' && body.location) {
+        store.maintenanceRecords.push({
+          id: `mnt-${Date.now()}-${seq++}`,
+          scooter_id: id,
+          location: body.location,
+          issue: body.issue || body.maintenanceNote || 'Perbaikan rutin',
+          note: body.note || null,
+          status: 'repair',
+          started_at: new Date().toISOString()
+        })
+      } else if (store.scooters[idx].status !== 'maintenance') {
+        store.maintenanceRecords
+          .filter(r => r.scooter_id === id && r.status === 'repair')
+          .forEach(r => { r.status = 'done'; r.resolved_at = new Date().toISOString() })
+      }
       store.scooters[idx].last_updated = new Date().toISOString()
       return { ok: true, body: store.scooters[idx] }
+    }
+
+    case method === 'PUT' && path.endsWith('/device-condition'): {
+      const id = path.replace('/api/scooters/', '').replace('/device-condition', '')
+      if (!store.scooters.find(s => s.id === id)) {
+        return { ok: false, status: 404, body: { error: `Scooter "${id}" tidak ditemukan.` } }
+      }
+      const dc = { ...body, updated_at: new Date().toISOString() }
+      store.deviceConditions[id] = dc
+      return { ok: true, body: { success: true, device_condition: dc } }
+    }
+
+    case method === 'GET' && path === '/api/maintenance-records':
+      return { ok: true, body: [...store.maintenanceRecords].sort((a, b) => new Date(b.started_at) - new Date(a.started_at)) }
+
+    case method === 'POST' && path.startsWith('/api/maintenance-records/') && path.endsWith('/complete'): {
+      const id = path.replace('/api/maintenance-records/', '').replace('/complete', '')
+      const rec = store.maintenanceRecords.find(r => r.id === id)
+      if (!rec) return { ok: false, status: 404, body: { error: 'Catatan maintenance tidak ditemukan.' } }
+      rec.status = 'done'
+      rec.resolved_at = new Date().toISOString()
+      const scooter = store.scooters.find(s => s.id === rec.scooter_id)
+      if (scooter && scooter.status === 'maintenance') {
+        scooter.status = 'available'
+        scooter.maintenance_note = null
+      }
+      return { ok: true, body: { success: true, record: rec } }
     }
 
     case method === 'GET' && path === '/api/activity-log':
@@ -76,12 +127,13 @@ function apiHandler(method, path, body) {
       const bike = store.scooters.find(s => s.id === id)
       if (!bike) return { ok: true, body: { success: false, message: `Scooter "${id}" tidak ditemukan.` } }
 
-      if (bike.status === 'maintenance' && !forceMaintenance) {
-        const noteText = bike.maintenance_note ? `\nCatatan Perbaikan: "${bike.maintenance_note}"` : ''
-        return { ok: true, body: { success: false, requiresConfirmation: true, message: `Apakah Anda yakin akan menyewakan unit ${bike.id} yang sedang dalam maintenance?${noteText}` } }
+      if ((bike.status === 'maintenance' || bike.status === 'rusak') && !forceMaintenance) {
+        const isRusak = bike.status === 'rusak'
+        const noteText = bike.maintenance_note ? `\n${isRusak ? 'Catatan Kerusakan' : 'Catatan Perbaikan'}: "${bike.maintenance_note}"` : ''
+        return { ok: true, body: { success: false, requiresConfirmation: true, message: `Apakah Anda yakin akan menyewakan unit ${bike.id} yang sedang dalam status ${isRusak ? 'rusak' : 'maintenance'}?${noteText}` } }
       }
 
-      const wasAvailable = bike.status === 'available' || bike.status === 'maintenance'
+      const wasAvailable = ['available', 'maintenance', 'rusak'].includes(bike.status)
       bike.status = wasAvailable ? 'in-use' : 'available'
       bike.last_updated = new Date().toISOString()
       if (bike.status === 'in-use') bike.maintenance_note = null
@@ -254,6 +306,111 @@ describe('Storage API Client', () => {
     await toggleScooterStatus('SD-100', true) // force checkout
     const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-100'))
     expect(scooter.maintenanceNote).toBeNull()
+  })
+
+  it('14. Blocks checkout for rusak (offline) unit (Worst Case)', async () => {
+    await addScooter({ id: 'SD-200', type: 'sd' })
+    await updateScooter('SD-200', { status: 'rusak', maintenanceNote: 'Tidak menyala' })
+    const result = await toggleScooterStatus('SD-200')
+    expect(result.success).toBe(false)
+    expect(result.requiresConfirmation).toBe(true)
+    expect(result.message).toMatch(/rusak/)
+    expect(result.message).toContain('Tidak menyala')
+  })
+
+  it('15. Allows rusak unit checkout with force flag', async () => {
+    await addScooter({ id: 'SD-201', type: 'sd' })
+    await updateScooter('SD-201', { status: 'rusak' })
+    const result = await toggleScooterStatus('SD-201', true)
+    expect(result.success).toBe(true)
+    expect(result.action).toBe('checkout')
+  })
+})
+
+describe('Device condition', () => {
+  it('saves device condition via PUT endpoint', async () => {
+    const { saveDeviceCondition, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-300', type: 'sd' })
+
+    const dc = await saveDeviceCondition('SD-300', {
+      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'rusak'
+    })
+    expect(dc.baterai).toBe('drop')
+    expect(dc.monitor).toBe('e4')
+
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-300'))
+    expect(scooter.deviceCondition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4' }))
+  })
+})
+
+describe('Maintenance records', () => {
+  it('lists maintenance records and creates one when unit goes to maintenance', async () => {
+    const { getMaintenanceRecords, updateScooter } = await import('./storage')
+    await addScooter({ id: 'SD-400', type: 'sd' })
+
+    await updateScooter('SD-400', { status: 'maintenance', location: 'luar', issue: 'Baterai drop', note: 'ganti BMS' })
+    const records = await getMaintenanceRecords()
+
+    const rec = records.find(r => r.scooterId === 'SD-400')
+    expect(rec).toBeDefined()
+    expect(rec.location).toBe('luar')
+    expect(rec.issue).toBe('Baterai drop')
+    expect(rec.note).toBe('ganti BMS')
+    expect(rec.status).toBe('repair')
+  })
+
+  it('completes maintenance and restores scooter to available', async () => {
+    const { getMaintenanceRecords, completeMaintenanceRecord, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-402', type: 'sd' })
+    await updateScooter('SD-402', { status: 'maintenance', location: 'luar', issue: 'Ban kempes' })
+
+    const records = await getMaintenanceRecords()
+    const rec = records.find(r => r.scooterId === 'SD-402')
+    expect(rec).toBeDefined()
+
+    const res = await completeMaintenanceRecord(rec.id)
+    expect(res.success).toBe(true)
+
+    const after = await getMaintenanceRecords()
+    expect(after.find(r => r.id === rec.id).status).toBe('done')
+
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-402'))
+    expect(scooter.status).toBe('available')
+  })
+
+  it('surfaces active maintenance on scooter objects', async () => {
+    const { updateScooter, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-401', type: 'sd' })
+    await updateScooter('SD-401', { status: 'maintenance', location: 'outlet', issue: 'Rem blong' })
+
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-401'))
+    expect(scooter.activeMaintenance).toEqual(expect.objectContaining({ location: 'outlet', issue: 'Rem blong' }))
+  })
+})
+
+describe('exportScooterHistoryToExcel', () => {
+  it('builds an xlsx workbook and triggers download', async () => {
+    const writeFileMock = vi.fn()
+    vi.doMock('xlsx', () => ({
+      utils: {
+        book_new: () => ({ SheetNames: [], Sheets: {} }),
+        json_to_sheet: () => ({}),
+        book_append_sheet: (wb, ws, name) => { wb.SheetNames.push(name); wb.Sheets[name] = ws },
+      },
+      writeFile: writeFileMock
+    }))
+
+    const { exportScooterHistoryToExcel } = await import('./storage')
+    await exportScooterHistoryToExcel(
+      { id: 'SD-1', type: 'sd' },
+      [{ id: 'l1', scooterId: 'SD-1', action: 'checkout', timestamp: new Date().toISOString() }],
+      [{ id: 'm1', scooterId: 'SD-1', location: 'outlet', issue: 'Rem', status: 'done', startedAt: new Date().toISOString() }]
+    )
+
+    expect(writeFileMock).toHaveBeenCalledTimes(1)
+    expect(writeFileMock.mock.calls[0][0].SheetNames).toEqual(['Riwayat Unit', 'Riwayat Maintenance'])
+    vi.doUnmock('xlsx')
+    vi.resetModules()
   })
 })
 

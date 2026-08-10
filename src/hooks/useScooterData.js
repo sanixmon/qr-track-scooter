@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getScooters, getActivityLog } from '../storage'
+import { getScooters, getActivityLog, getMaintenanceRecords } from '../storage'
 
 export function useScooterData() {
   const [scooters,    setScooters]    = useState([])
   const [activityLog, setActivityLog] = useState([])
+  const [maintenanceRecords, setMaintenanceRecords] = useState([])
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState(null)
   const mountedRef = useRef(true)
@@ -11,10 +12,11 @@ export function useScooterData() {
   const refresh = useCallback(() => {
     const load = async () => {
       try {
-        const [s, l] = await Promise.all([getScooters(), getActivityLog()])
+        const [s, l, m] = await Promise.all([getScooters(), getActivityLog(), getMaintenanceRecords()])
         if (mountedRef.current) {
           setScooters(s)
           setActivityLog(l)
+          setMaintenanceRecords(m)
           setError(null)
         }
       } catch (err) {
@@ -35,9 +37,12 @@ export function useScooterData() {
     getActivityLog()
       .then(l => { if (mountedRef.current) setActivityLog(l) })
       .catch(() => {})
+    getMaintenanceRecords()
+      .then(m => { if (mountedRef.current) setMaintenanceRecords(m) })
+      .catch(() => {})
       .finally(() => { if (mountedRef.current) setLoading(false) })
     return () => { mountedRef.current = false }
   }, [])
 
-  return { scooters, activityLog, loading, error, refresh }
+  return { scooters, activityLog, maintenanceRecords, loading, error, refresh }
 }

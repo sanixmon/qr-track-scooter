@@ -8,11 +8,75 @@ const PORT = process.env.PORT || 3005
 app.use(cors())
 app.use(express.json())
 
+// Real-time data must never be cached by browsers or HTTP clients
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store')
+  next()
+})
+
+// ── Helpers ────────────────────────────────────────────────
+function serializeScooter(row, dc = null, activeMaint = null) {
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    maintenance_note: row.maintenance_note,
+    last_updated: row.last_updated,
+    device_condition: dc ? {
+      setelan: dc.setelan,
+      lampu: dc.lampu,
+      baterai: dc.baterai,
+      monitor: dc.monitor,
+      rem: dc.rem,
+      ban: dc.ban,
+      updated_at: dc.updated_at
+    } : null,
+    active_maintenance: activeMaint ? {
+      id: activeMaint.id,
+      location: activeMaint.location,
+      issue: activeMaint.issue,
+      note: activeMaint.note,
+      status: activeMaint.status,
+      started_at: activeMaint.started_at
+    } : null
+  }
+}
+
+function getScooterRow(id) {
+  const row = db.prepare('SELECT * FROM scooters WHERE id = ?').get(id)
+  if (!row) return null
+  const dc = db.prepare('SELECT * FROM device_conditions WHERE scooter_id = ?').get(id)
+  const activeMaint = db.prepare(
+    "SELECT * FROM maintenance_records WHERE scooter_id = ? AND status = 'repair' ORDER BY started_at DESC LIMIT 1"
+  ).get(id)
+  return serializeScooter(row, dc, activeMaint)
+}
+
+const DEVICE_FIELDS = ['setelan', 'lampu', 'baterai', 'monitor', 'rem', 'ban']
+const DEVICE_VALUES = {
+  setelan: ['ada', 'tidak'],
+  lampu: ['nyala', 'redup'],
+  baterai: ['normal', 'drop'],
+  monitor: ['normal', 'e2', 'e4', 'e16', 'e6'],
+  rem: ['normal', 'rusak'],
+  ban: ['normal', 'rusak']
+}
+
+// ── Scooters ───────────────────────────────────────────────
 app.get('/api/scooters', (req, res) => {
-  const rows = db.prepare(
-    'SELECT * FROM scooters ORDER BY id ASC'
+  const rows = db.prepare('SELECT * FROM scooters ORDER BY id ASC').all()
+  const conditions = db.prepare('SELECT * FROM device_conditions').all()
+  const activeMaints = db.prepare(
+    "SELECT * FROM maintenance_records WHERE status = 'repair' ORDER BY started_at DESC"
   ).all()
-  res.json(rows)
+
+  const dcMap = new Map(conditions.map(c => [c.scooter_id, c]))
+  const maintMap = new Map()
+  for (const m of activeMaints) {
+    if (!maintMap.has(m.scooter_id)) maintMap.set(m.scooter_id, m)
+  }
+
+  res.json(rows.map(row => serializeScooter(row, dcMap.get(row.id), maintMap.get(row.id))))
 })
 
 app.post('/api/scooters', (req, res) => {
@@ -69,7 +133,7 @@ app.post('/api/scooters', (req, res) => {
     VALUES (@id, @type, @status, @maintenance_note, @last_updated)
   `).run(newScooter)
 
-  res.status(201).json(newScooter)
+  res.status(201).json(getScooterRow(finalId))
 })
 
 app.delete('/api/scooters/:id', (req, res) => {
@@ -107,10 +171,126 @@ app.patch('/api/scooters/:id', (req, res) => {
     db.prepare(`UPDATE scooters SET ${updates.join(', ')} WHERE id = @id`).run(params)
   }
 
-  const updated = db.prepare('SELECT * FROM scooters WHERE id = ?').get(id)
-  res.json(updated)
+  // Maintenance record lifecycle
+  if ('status' in fields) {
+    const newStatus = fields.status
+    if (newStatus === 'maintenance' && existing.status !== 'maintenance') {
+      // Starting maintenance → create an open record
+      const recId = `mnt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const location = fields.location === 'luar' ? 'luar' : (fields.location === 'outlet' ? 'outlet' : 'outlet')
+      db.prepare(`
+        INSERT INTO maintenance_records (id, scooter_id, location, issue, note, status, started_at)
+        VALUES (?, ?, ?, ?, ?, 'repair', ?)
+      `).run(
+        recId,
+        id,
+        location,
+        fields.issue || fields.maintenanceNote || 'Perbaikan rutin',
+        fields.note || null,
+        new Date().toISOString()
+      )
+    } else if (existing.status === 'maintenance' && newStatus !== 'maintenance') {
+      // Leaving maintenance → close open records
+      db.prepare(`
+        UPDATE maintenance_records SET status = 'done', resolved_at = ?
+        WHERE scooter_id = ? AND status = 'repair'
+      `).run(new Date().toISOString(), id)
+    }
+  }
+
+  res.json(getScooterRow(id))
 })
 
+// ── Device Condition ───────────────────────────────────────
+app.put('/api/scooters/:id/device-condition', (req, res) => {
+  const { id } = req.params
+  const scooter = db.prepare('SELECT id FROM scooters WHERE id = ?').get(id)
+  if (!scooter) {
+    return res.status(404).json({ error: `Scooter "${id}" tidak ditemukan.` })
+  }
+
+  const values = {}
+  for (const field of DEVICE_FIELDS) {
+    const v = req.body?.[field]
+    if (v === undefined || v === null || v === '') {
+      values[field] = null
+    } else if (DEVICE_VALUES[field].includes(v)) {
+      values[field] = v
+    } else {
+      return res.status(400).json({ error: `Nilai tidak valid untuk ${field}.` })
+    }
+  }
+
+  db.prepare(`
+    INSERT INTO device_conditions (scooter_id, setelan, lampu, baterai, monitor, rem, ban, updated_at)
+    VALUES (@id, @setelan, @lampu, @baterai, @monitor, @rem, @ban, @updated_at)
+    ON CONFLICT(scooter_id) DO UPDATE SET
+      setelan = @setelan, lampu = @lampu, baterai = @baterai, monitor = @monitor,
+      rem = @rem, ban = @ban, updated_at = @updated_at
+  `).run({
+    id,
+    ...values,
+    updated_at: new Date().toISOString()
+  })
+
+  const dc = db.prepare('SELECT * FROM device_conditions WHERE scooter_id = ?').get(id)
+  res.json({
+    success: true,
+    device_condition: {
+      setelan: dc.setelan,
+      lampu: dc.lampu,
+      baterai: dc.baterai,
+      monitor: dc.monitor,
+      rem: dc.rem,
+      ban: dc.ban,
+      updated_at: dc.updated_at
+    }
+  })
+})
+
+// ── Maintenance Records ────────────────────────────────────
+app.get('/api/maintenance-records', (req, res) => {
+  const rows = db.prepare(`
+    SELECT mr.*, s.type AS scooter_type
+    FROM maintenance_records mr
+    JOIN scooters s ON s.id = mr.scooter_id
+    ORDER BY mr.started_at DESC
+  `).all()
+  res.json(rows)
+})
+
+app.post('/api/maintenance-records/:id/complete', (req, res) => {
+  const { id } = req.params
+  const rec = db.prepare('SELECT * FROM maintenance_records WHERE id = ?').get(id)
+  if (!rec) {
+    return res.status(404).json({ error: 'Catatan maintenance tidak ditemukan.' })
+  }
+
+  db.prepare(`
+    UPDATE maintenance_records SET status = 'done', resolved_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), id)
+
+  // If no other open records, restore scooter to available
+  const remaining = db.prepare(
+    "SELECT COUNT(*) as count FROM maintenance_records WHERE scooter_id = ? AND status = 'repair'"
+  ).get(rec.scooter_id)
+
+  if (remaining.count === 0) {
+    const scooter = db.prepare('SELECT * FROM scooters WHERE id = ?').get(rec.scooter_id)
+    if (scooter && scooter.status === 'maintenance') {
+      db.prepare(`
+        UPDATE scooters SET status = 'available', maintenance_note = NULL, last_updated = ?
+        WHERE id = ?
+      `).run(new Date().toISOString(), rec.scooter_id)
+    }
+  }
+
+  const updated = db.prepare('SELECT * FROM maintenance_records WHERE id = ?').get(id)
+  res.json({ success: true, record: updated })
+})
+
+// ── Toggle ─────────────────────────────────────────────────
 app.post('/api/scooters/:id/toggle', (req, res) => {
   const { id } = req.params
   const forceMaintenance = req.body.forceMaintenance === true
@@ -120,16 +300,19 @@ app.post('/api/scooters/:id/toggle', (req, res) => {
     return res.json({ success: false, message: `Scooter "${id}" tidak ditemukan.` })
   }
 
-  if (bike.status === 'maintenance' && !forceMaintenance) {
-    const noteText = bike.maintenance_note ? `\nCatatan Perbaikan: "${bike.maintenance_note}"` : ''
+  if ((bike.status === 'maintenance' || bike.status === 'rusak') && !forceMaintenance) {
+    const isRusak = bike.status === 'rusak'
+    const noteText = bike.maintenance_note
+      ? `\n${isRusak ? 'Catatan Kerusakan' : 'Catatan Perbaikan'}: "${bike.maintenance_note}"`
+      : ''
     return res.json({
       success: false,
       requiresConfirmation: true,
-      message: `Apakah Anda yakin akan menyewakan unit ${bike.id} yang sedang dalam maintenance?${noteText}`
+      message: `Apakah Anda yakin akan menyewakan unit ${bike.id} yang sedang dalam status ${isRusak ? 'rusak' : 'maintenance'}?${noteText}`
     })
   }
 
-  const wasAvailable = bike.status === 'available' || bike.status === 'maintenance'
+  const wasAvailable = bike.status === 'available' || bike.status === 'maintenance' || bike.status === 'rusak'
   const nextStatus = wasAvailable ? 'in-use' : 'available'
 
   const now = new Date().toISOString()
@@ -138,18 +321,25 @@ app.post('/api/scooters/:id/toggle', (req, res) => {
     WHERE id = ?
   `).run(nextStatus, now, nextStatus, id)
 
+  // Leaving maintenance/rusak (force checkout) closes open repair records
+  if ((bike.status === 'maintenance' || bike.status === 'rusak') && nextStatus === 'in-use') {
+    db.prepare(`
+      UPDATE maintenance_records SET status = 'done', resolved_at = ?
+      WHERE scooter_id = ? AND status = 'repair'
+    `).run(now, id)
+  }
+
   const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   db.prepare(`
     INSERT INTO activity_log (id, scooter_id, scooter_type, action, timestamp)
     VALUES (?, ?, ?, ?, ?)
   `).run(logId, id, bike.type, wasAvailable ? 'checkout' : 'return', new Date().toISOString())
 
-  const updated = db.prepare('SELECT * FROM scooters WHERE id = ?').get(id)
   const typeLabel = bike.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'
 
   res.json({
     success: true,
-    scooter: updated,
+    scooter: getScooterRow(id),
     action: wasAvailable ? 'checkout' : 'return',
     message: wasAvailable
       ? `Scooter ${id} (${typeLabel}) sekarang sedang digunakan.`
@@ -157,6 +347,7 @@ app.post('/api/scooters/:id/toggle', (req, res) => {
   })
 })
 
+// ── Activity Log ───────────────────────────────────────────
 app.get('/api/activity-log', (req, res) => {
   const rows = db.prepare(
     'SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 500'

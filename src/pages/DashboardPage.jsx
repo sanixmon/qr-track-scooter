@@ -1,20 +1,28 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { QrCode, Search, ArrowUpRight, ArrowDownLeft, Calendar, ShieldAlert } from 'lucide-react'
+import { QrCode, Search, ArrowUpRight, ArrowDownLeft, Calendar, ShieldAlert, Wrench, MapPin, CheckCircle2, Loader2 } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
 import DashboardStats from '../components/DashboardStats'
 import ScooterGrid from '../components/ScooterGrid'
 import TypeSummary from '../components/TypeSummary'
 import ActivityFeed from '../components/ActivityFeed'
+import ScooterDetailModal from '../components/ScooterDetailModal'
+import { completeMaintenanceRecord } from '../storage'
+import { showToastNotification, showErrorAlert, showConfirmDialog } from '../utils/swal'
 import { format } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 
 export default function DashboardPage() {
-  const { scooters, activityLog, loading, error, refresh } = useScooterData()
+  const { scooters, activityLog, maintenanceRecords, loading, error, refresh } = useScooterData()
 
   // Dashboard grid filters
   const [gridStatus, setGridStatus] = useState('all')
   const [gridType, setGridType] = useState('all')
+
+  // Detail modal
+  const [selectedId, setSelectedId] = useState(null)
+  const selectedScooter = scooters.find(s => s.id === selectedId) || null
+  const [completing, setCompleting] = useState(null)
 
   // Activity log filters
   const [search, setSearch] = useState('')
@@ -46,6 +54,27 @@ export default function DashboardPage() {
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page)
+    }
+  }
+
+  const handleCompleteMaintenance = async (record) => {
+    const res = await showConfirmDialog({
+      title: 'Selesaikan Maintenance?',
+      text: `Tandai perbaikan unit ${record.scooterId} selesai? Unit akan kembali tersedia.`,
+      confirmText: 'Ya, Selesai',
+      cancelText: 'Batal',
+      icon: 'success'
+    })
+    if (!res.isConfirmed) return
+    setCompleting(record.id)
+    try {
+      await completeMaintenanceRecord(record.id)
+      await refresh()
+      showToastNotification({ icon: 'success', title: 'Maintenance selesai' })
+    } catch (err) {
+      showErrorAlert('Gagal', err.message)
+    } finally {
+      setCompleting(null)
     }
   }
 
@@ -104,7 +133,7 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
-          <DashboardStats scooters={scooters} activityLog={activityLog} />
+          <DashboardStats scooters={scooters} />
 
           {/* Main Grid: Left content, Right sidebars */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
@@ -125,7 +154,8 @@ export default function DashboardPage() {
                     >
                       <option value="all">Semua Status</option>
                       <option value="available">Tersedia</option>
-                      <option value="in-use">Disewakan</option>
+                      <option value="in-use">Online</option>
+                      <option value="rusak">Offline / Rusak</option>
                       <option value="maintenance">Maintenance</option>
                     </select>
                     {/* Type Filter */}
@@ -145,7 +175,7 @@ export default function DashboardPage() {
                     Tidak ada scooter yang cocok dengan filter status/jenis.
                   </p>
                 ) : (
-                  <ScooterGrid scooters={filteredScooters} />
+                  <ScooterGrid scooters={filteredScooters} onSelect={(s) => setSelectedId(s.id)} />
                 )}
               </div>
 
@@ -291,7 +321,106 @@ export default function DashboardPage() {
               <ActivityFeed log={activityLog} />
             </div>
           </div>
+
+          {/* ── Maintenance Tracking Table ── */}
+          <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+              <div>
+                <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
+                  Status Maintenance
+                </h2>
+                <p className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+                  {maintenanceRecords.filter(m => m.status === 'repair').length} dalam perbaikan · {maintenanceRecords.filter(m => m.status === 'done').length} selesai
+                </p>
+              </div>
+              <span className="flex items-center gap-1.5 rounded-full bg-[var(--color-warning-subtle)] px-2.5 py-1 text-[10px] font-bold text-[var(--color-warning)]">
+                <Wrench size={11} />
+                Maintenance
+              </span>
+            </div>
+
+            {maintenanceRecords.length === 0 ? (
+              <p className="p-8 text-center text-[12px] text-[var(--color-muted)]">
+                Belum ada catatan maintenance.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                      <th className="px-4 py-2.5">Unit</th>
+                      <th className="px-4 py-2.5">Lokasi</th>
+                      <th className="px-4 py-2.5">Kendala</th>
+                      <th className="px-4 py-2.5">Status</th>
+                      <th className="px-4 py-2.5">Mulai</th>
+                      <th className="px-4 py-2.5 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--color-border)]">
+                    {maintenanceRecords.slice(0, 20).map((rec) => {
+                      const isRepair = rec.status === 'repair'
+                      return (
+                        <tr key={rec.id} className="hover:bg-[var(--color-surface-3)] transition-colors">
+                          <td className="px-4 py-2.5 font-mono font-bold text-[var(--color-accent)]">
+                            {rec.scooterId}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center gap-1 text-[var(--color-muted)]">
+                              <MapPin size={11} className="text-[var(--color-subtle)]" />
+                              {rec.location === 'outlet' ? 'Di Outlet' : 'Keluar / Luar'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 max-w-[220px]">
+                            <span className="block truncate">{rec.issue || '-'}</span>
+                            {rec.note && (
+                              <span className="block truncate text-[10px] italic text-[var(--color-muted)]">{rec.note}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              isRepair
+                                ? 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)]'
+                                : 'bg-[var(--color-green-subtle)] text-[var(--color-green)]'
+                            }`}>
+                              {isRepair ? <Wrench size={10} /> : <CheckCircle2 size={10} />}
+                              {isRepair ? 'Repair' : 'Selesai'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-[var(--color-muted)] font-medium">
+                            {format(new Date(rec.startedAt), 'dd MMM, HH:mm', { locale: localeId })}
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            {isRepair && (
+                              <button
+                                onClick={() => handleCompleteMaintenance(rec)}
+                                disabled={completing === rec.id}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--color-warning-ring)] bg-[var(--color-warning-subtle)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)] transition-colors hover:bg-[var(--color-warning)] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {completing === rec.id ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                                Selesai
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </>
+      )}
+
+      {/* ── Unit Detail Modal ── */}
+      {selectedScooter && (
+        <ScooterDetailModal
+          scooter={selectedScooter}
+          activityLog={activityLog}
+          maintenanceRecords={maintenanceRecords}
+          onClose={() => setSelectedId(null)}
+          onRefresh={refresh}
+        />
       )}
     </div>
   )

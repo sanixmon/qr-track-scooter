@@ -76,3 +76,48 @@ export const showPromptDialog = ({ title, text, placeholder = '', defaultValue =
     reverseButtons: true
   })
 }
+
+// Dialog for starting maintenance: asks location (outlet/luar) + issue (kendala)
+export const showMaintenanceDialog = ({ title, text, defaultValue = '' }) => {
+  const escapeHtml = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
+  return MySwal.fire({
+    title,
+    text,
+    html: `
+      <div class="text-left space-y-4">
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--color-muted)] mb-1">Lokasi Perbaikan</label>
+          <select id="swal-maint-location" class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-2 text-[13px] text-[var(--color-text)] focus:border-[var(--color-accent)] outline-none">
+            <option value="outlet">Di Outlet</option>
+            <option value="luar">Keluar / Di Luar</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--color-muted)] mb-1">Kendala / Kerusakan</label>
+          <input id="swal-maint-issue" class="swal2-input" placeholder="Contoh: Baterai drop, rem blong" value="${escapeHtml(defaultValue)}" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-[var(--color-muted)] mb-1">Catatan Tambahan (opsional)</label>
+          <textarea id="swal-maint-note" class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-3 py-2 text-[13px] text-[var(--color-text)] focus:border-[var(--color-accent)] outline-none" rows="2" placeholder="Detail kondisi, suku cadang, dll."></textarea>
+        </div>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Mulai Maintenance',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    preConfirm: () => {
+      const location = document.getElementById('swal-maint-location').value
+      const issue = document.getElementById('swal-maint-issue').value.trim()
+      if (!issue) {
+        Swal.showValidationMessage('Kendala / kerusakan wajib diisi')
+        return false
+      }
+      const note = document.getElementById('swal-maint-note').value.trim()
+      return { location, issue, note }
+    }
+  })
+}

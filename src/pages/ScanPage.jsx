@@ -44,7 +44,7 @@ export default function ScanPage() {
       const res = await toggleScooterStatus(scooterId)
       if (res.requiresConfirmation) {
         const confirmRes = await showConfirmDialog({
-          title: 'Unit Dalam Maintenance',
+          title: 'Unit Tidak Tersedia',
           text: res.message,
           confirmText: 'Sewa Unit Ini',
           cancelText: 'Batal',
