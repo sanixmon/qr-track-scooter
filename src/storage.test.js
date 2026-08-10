@@ -256,3 +256,36 @@ describe('Storage API Client', () => {
     expect(scooter.maintenanceNote).toBeNull()
   })
 })
+
+describe('downloadAllScooterQRs', () => {
+  it('rejects when scooters list is empty (Worst Case)', async () => {
+    const { downloadAllScooterQRs } = await import('./storage')
+    await expect(downloadAllScooterQRs([])).rejects.toThrow('Belum ada scooter')
+    await expect(downloadAllScooterQRs(null)).rejects.toThrow('Belum ada scooter')
+  })
+
+  it('generates a ZIP with one PNG per scooter', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test')
+    vi.stubGlobal('window', { URL: { createObjectURL, revokeObjectURL: vi.fn() } })
+    vi.stubGlobal('document', { createElement: vi.fn(() => ({ href: '', download: '', click: vi.fn() })) })
+    vi.stubGlobal('setTimeout', vi.fn(cb => cb()))
+
+    const { downloadAllScooterQRs } = await import('./storage')
+    await downloadAllScooterQRs([{ id: 'SD-1', type: 'sd' }, { id: 'BT-2', type: 'bt' }])
+
+    const zipBlob = createObjectURL.mock.calls[0][0]
+    expect(zipBlob.type).toBe('application/zip')
+
+    const JSZip = (await import('jszip')).default
+    const savedZip = await JSZip.loadAsync(zipBlob)
+    const files = Object.keys(savedZip.files)
+    expect(files).toEqual(['QR-SD-1-SD.png', 'QR-BT-2-BT.png'])
+
+    const png = await savedZip.file('QR-SD-1-SD.png').async('uint8array')
+    expect(png[0]).toBe(0x89)
+    expect(png[1]).toBe(0x50)
+    expect(png[2]).toBe(0x4e)
+    expect(png[3]).toBe(0x47)
+    vi.unstubAllGlobals()
+  })
+})

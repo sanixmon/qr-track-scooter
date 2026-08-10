@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database } from 'lucide-react'
+import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database, FolderArchive } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
-import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadDatabaseBackup } from '../storage'
+import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadAllScooterQRs, downloadDatabaseBackup } from '../storage'
 import { showConfirmDialog, showPromptDialog, showErrorAlert, showToastNotification } from '../utils/swal'
 
 export default function ManagePage() {
@@ -16,6 +16,7 @@ export default function ManagePage() {
   const [downloadingId, setDownloadingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
+  const [zippingAll, setZippingAll] = useState(false)
 
   const handleBackup = async () => {
     try {
@@ -113,6 +114,18 @@ export default function ManagePage() {
     }
   }
 
+  const handleDownloadAllQR = async () => {
+    try {
+      setZippingAll(true)
+      await downloadAllScooterQRs(scooters)
+      showToastNotification({ icon: 'success', title: 'Semua QR Code diunduh' })
+    } catch (err) {
+      showErrorAlert('Gagal Unduh QR Code', err.message)
+    } finally {
+      setZippingAll(false)
+    }
+  }
+
   // Filter and sort scooters
   const filtered = scooters
     .filter((s) => {
@@ -161,23 +174,42 @@ export default function ManagePage() {
             Tambah unit scooter baru, ubah status unit, dan unduh QR code untuk operasional
           </p>
         </div>
-        <button
-          onClick={handleBackup}
-          disabled={backingUp}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-[12px] font-semibold text-[var(--color-text)] shadow-sm transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {backingUp ? (
-            <>
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
-              Mengunduh Backup...
-            </>
-          ) : (
-            <>
-              <Database size={15} className="text-[var(--color-accent)]" />
-              Backup Basis Data
-            </>
-          )}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleDownloadAllQR}
+            disabled={zippingAll || scooters.length === 0}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-[12px] font-semibold text-[var(--color-text)] shadow-sm transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {zippingAll ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+                Membuat ZIP...
+              </>
+            ) : (
+              <>
+                <FolderArchive size={15} className="text-[var(--color-accent)]" />
+                Unduh Semua QR
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleBackup}
+            disabled={backingUp}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-[12px] font-semibold text-[var(--color-text)] shadow-sm transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {backingUp ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+                Mengunduh Backup...
+              </>
+            ) : (
+              <>
+                <Database size={15} className="text-[var(--color-accent)]" />
+                Backup Basis Data
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {dbError && scooters.length === 0 ? (

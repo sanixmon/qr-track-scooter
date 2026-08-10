@@ -100,6 +100,42 @@ export async function downloadScooterQR(scooter) {
   a.click()
 }
 
+export async function downloadAllScooterQRs(scooters) {
+  if (!scooters || scooters.length === 0) {
+    throw new Error('Belum ada scooter untuk diunduh QR-nya.')
+  }
+
+  const [JSZip, QRCode] = await Promise.all([
+    import('jszip'),
+    import('qrcode'),
+  ])
+  const zip = new JSZip.default()
+
+  const options = {
+    width: 400,
+    margin: 2,
+    color: { dark: '#0d1017', light: '#ffffff' },
+    errorCorrectionLevel: 'H',
+  }
+
+  for (const scooter of scooters) {
+    const dataUrl = await QRCode.default.toDataURL(scooter.id, options)
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
+    zip.file(`QR-${scooter.id}-${scooter.type.toUpperCase()}.png`, base64, { base64: true })
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `QR-SEMUA-SCOOTER-${new Date().toISOString().slice(0, 10)}.zip`
+  a.click()
+
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url)
+  }, 1000)
+}
+
 export async function downloadDatabaseBackup() {
   try {
     const backupInfo = await api('/api/backup', { method: 'POST' })
@@ -128,7 +164,7 @@ export async function downloadDatabaseBackup() {
       window.URL.revokeObjectURL(url)
     }, 1000)
   } catch (err) {
-    throw new Error('Gagal mengunduh backup database: ' + err.message)
+    throw new Error('Gagal mengunduh backup database: ' + err.message, { cause: err })
   }
 }
 
