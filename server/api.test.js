@@ -153,16 +153,17 @@ describe('PUT /api/scooters/:id/device-condition', () => {
   it('saves device condition and exposes it via GET /api/scooters', async () => {
     await api('POST', '/api/scooters', { id: 'SD-40', type: 'sd' })
     const { status, data } = await api('PUT', '/api/scooters/SD-40/device-condition', {
-      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'rusak'
+      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
     })
     expect(status).toBe(200)
     expect(data.success).toBe(true)
     expect(data.device_condition.baterai).toBe('drop')
     expect(data.device_condition.monitor).toBe('e4')
+    expect(data.device_condition.ban).toBe('botak')
 
     const { data: list } = await api('GET', '/api/scooters')
     const s = list.find(x => x.id === 'SD-40')
-    expect(s.device_condition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4', ban: 'rusak' }))
+    expect(s.device_condition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4', ban: 'botak' }))
   })
 
   it('rejects invalid values (Worst Case)', async () => {
@@ -174,6 +175,60 @@ describe('PUT /api/scooters/:id/device-condition', () => {
   it('returns 404 for non-existent scooter (Worst Case)', async () => {
     const { status } = await api('PUT', '/api/scooters/GHOST/device-condition', { baterai: 'normal' })
     expect(status).toBe(404)
+  })
+
+  it('auto-marks scooter as rusak when Jenis Error is set', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-41', type: 'sd' })
+    const { data } = await api('PUT', '/api/scooters/SD-41/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'e4', rem: 'normal', ban: 'aman'
+    })
+    expect(data.scooter.status).toBe('rusak')
+    expect(data.scooter.maintenance_note).toBe('Error E4')
+  })
+
+  it('auto-restores rusak scooter to available when Jenis Error is cleared', async () => {
+    await api('PATCH', '/api/scooters/SD-41', { status: 'rusak', maintenanceNote: 'Error E4' })
+    const { data } = await api('PUT', '/api/scooters/SD-41/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman'
+    })
+    expect(data.scooter.status).toBe('available')
+    expect(data.scooter.maintenance_note).toBeNull()
+  })
+
+  it('does not auto-change status when unit is in-use or maintenance (Worst Case)', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-42', type: 'sd' })
+    await api('POST', '/api/scooters/SD-42/toggle', {}) // → in-use
+    const { data } = await api('PUT', '/api/scooters/SD-42/device-condition', {
+      monitor: 'e2', baterai: 'normal', lampu: 'nyala', setelan: 'ada', rem: 'normal', ban: 'aman'
+    })
+    expect(data.scooter.status).toBe('in-use')
+
+    await api('POST', '/api/scooters', { id: 'SD-43', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-43', { status: 'maintenance', location: 'outlet', issue: 'Rem blong' })
+    const { data: data2 } = await api('PUT', '/api/scooters/SD-43/device-condition', {
+      monitor: 'e6', baterai: 'normal', lampu: 'nyala', setelan: 'ada', rem: 'normal', ban: 'aman'
+    })
+    expect(data2.scooter.status).toBe('maintenance')
+  })
+
+  it('accepts new ban options botak/tipis/aman', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-44', type: 'sd' })
+    const { status, data } = await api('PUT', '/api/scooters/SD-44/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'tipis'
+    })
+    expect(status).toBe(200)
+    expect(data.device_condition.ban).toBe('tipis')
+
+    const { status: status2, data: data2 } = await api('PUT', '/api/scooters/SD-44/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman'
+    })
+    expect(status2).toBe(200)
+    expect(data2.device_condition.ban).toBe('aman')
+  })
+
+  it('rejects legacy ban value (Worst Case)', async () => {
+    const { status } = await api('PUT', '/api/scooters/SD-44/device-condition', { ban: 'rusak' })
+    expect(status).toBe(400)
   })
 })
 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ShieldAlert, ArrowUpRight, ArrowDownLeft, CalendarDays, ChevronLeft, ChevronRight, BarChart2 } from 'lucide-react'
+import { ShieldAlert, ArrowUpRight, ArrowDownLeft, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, BarChart2, Filter } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
 import { formatDistanceToNow, format, isSameDay, startOfDay, parseISO, isToday } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -14,6 +14,7 @@ export default function MonitorPage() {
   const { scooters, activityLog, loading, error, refresh } = useScooterData()
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter]     = useState('all')
+  const [showStatusPanel, setShowStatusPanel] = useState(false)
 
   // ── Date history state ────────────────────────────────
   // selectedDate = Date object or null (null = "Hari Ini" live view)
@@ -282,6 +283,24 @@ export default function MonitorPage() {
               </button>
             </div>
           )}
+        {/* ── Status Panel Toggle (optional) ── */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowStatusPanel(v => !v)}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[11px] font-semibold text-[var(--color-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          >
+            <Filter size={12} />
+            {showStatusPanel ? 'Sembunyikan Status Unit' : 'Tampilkan Status Unit'}
+            {showStatusPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+          {!showStatusPanel && (
+            <span className="text-[11px] text-[var(--color-subtle)]">
+              Filter status, jenis &amp; grid unit tersembunyi untuk tampilan bersih
+            </span>
+          )}
+        </div>
+
+        {showStatusPanel ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
 
           {/* ── Left Column: Status Grid (live only) or Historical Summary ── */}
@@ -403,67 +422,77 @@ export default function MonitorPage() {
           </div>
 
           {/* ── Right Column: Activity Log Feed (filtered by date) ── */}
-          <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="border-b border-[var(--color-border)] p-4">
-              <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--color-subtle)] flex items-center gap-2">
-                {isLiveView ? (
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                  </span>
-                ) : (
-                  <CalendarDays size={12} className="text-[var(--color-accent)]" />
-                )}
-                {isLiveView ? 'Aktivitas Terkini' : format(activeDate, 'dd MMM yyyy', { locale: localeId })}
-              </h2>
-              <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                {logForDate.length} transaksi keluar/masuk
-              </p>
-            </div>
-
-            <div className="divide-y divide-[var(--color-border)] overflow-y-auto max-h-[600px] flex-1">
-              {logForDate.length === 0 ? (
-                <p className="p-8 text-center text-[12px] text-[var(--color-muted)]">
-                  {isLiveView ? 'Belum ada aktivitas hari ini.' : 'Tidak ada aktivitas pada tanggal ini.'}
-                </p>
-              ) : (
-                logForDate.map((entry) => {
-                  const isCheckout = entry.action === 'checkout'
-                  const timeStr = (() => {
-                    try { return format(parseISO(entry.timestamp), 'HH:mm:ss', { locale: localeId }) }
-                    catch { return '-' }
-                  })()
-                  const timeAgo = isLiveView ? (() => {
-                    try { return formatDistanceToNow(parseISO(entry.timestamp), { addSuffix: true, locale: localeId }) }
-                    catch { return '' }
-                  })() : null
-
-                  return (
-                    <div key={entry.id} className="p-3.5 flex items-start gap-3 hover:bg-[var(--color-surface-3)] transition-colors">
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        isCheckout ? 'bg-[var(--color-red-subtle)] text-[var(--color-red)]' : 'bg-[var(--color-green-subtle)] text-[var(--color-green)]'
-                      }`}>
-                        {isCheckout ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[13px] font-bold text-[var(--color-accent)]">{entry.scooterId}</span>
-                          <span className="text-[11px] text-[var(--color-muted)] font-mono">{timeStr}</span>
-                        </div>
-                        <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
-                          Unit {entry.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'} {isCheckout ? 'disewa (checkout)' : 'dikembalikan (return)'}
-                        </p>
-                        {timeAgo && <p className="text-[10px] text-[var(--color-subtle)] mt-0.5">{timeAgo}</p>}
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
+          <ActivityFeedPanel logForDate={logForDate} isLiveView={isLiveView} />
         </div>
+        ) : (
+          <ActivityFeedPanel logForDate={logForDate} isLiveView={isLiveView} fullWidth />
+        )}
         </>
       )}
+    </div>
+  )
+}
+
+/** Activity log feed — used in both the two-column layout and full-width clean view */
+function ActivityFeedPanel({ logForDate, isLiveView, fullWidth = false }) {
+  return (
+    <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+      <div className="border-b border-[var(--color-border)] p-4">
+        <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--color-subtle)] flex items-center gap-2">
+          {isLiveView ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+            </span>
+          ) : (
+            <CalendarDays size={12} className="text-[var(--color-accent)]" />
+          )}
+          {isLiveView ? 'Aktivitas Terkini' : 'Riwayat Aktivitas'}
+        </h2>
+        <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+          {logForDate.length} transaksi keluar/masuk
+        </p>
+      </div>
+
+      <div className={`divide-y divide-[var(--color-border)] overflow-y-auto flex-1 ${fullWidth ? 'max-h-[calc(100vh-340px)]' : 'max-h-[600px]'}`}>
+        {logForDate.length === 0 ? (
+          <p className="p-8 text-center text-[12px] text-[var(--color-muted)]">
+            {isLiveView ? 'Belum ada aktivitas hari ini.' : 'Tidak ada aktivitas pada tanggal ini.'}
+          </p>
+        ) : (
+          logForDate.map((entry) => {
+            const isCheckout = entry.action === 'checkout'
+            const timeStr = (() => {
+              try { return format(parseISO(entry.timestamp), 'HH:mm:ss', { locale: localeId }) }
+              catch { return '-' }
+            })()
+            const timeAgo = isLiveView ? (() => {
+              try { return formatDistanceToNow(parseISO(entry.timestamp), { addSuffix: true, locale: localeId }) }
+              catch { return '' }
+            })() : null
+
+            return (
+              <div key={entry.id} className={`p-3.5 flex items-start gap-3 hover:bg-[var(--color-surface-3)] transition-colors ${fullWidth ? 'px-5' : ''}`}>
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                  isCheckout ? 'bg-[var(--color-red-subtle)] text-[var(--color-red)]' : 'bg-[var(--color-green-subtle)] text-[var(--color-green)]'
+                }`}>
+                  {isCheckout ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[13px] font-bold text-[var(--color-accent)]">{entry.scooterId}</span>
+                    <span className="text-[11px] text-[var(--color-muted)] font-mono">{timeStr}</span>
+                  </div>
+                  <p className="text-[11px] text-[var(--color-muted)] mt-0.5">
+                    Unit {entry.scooterType === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'} {isCheckout ? 'disewa (checkout)' : 'dikembalikan (return)'}
+                  </p>
+                  {timeAgo && <p className="text-[10px] text-[var(--color-subtle)] mt-0.5">{timeAgo}</p>}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }

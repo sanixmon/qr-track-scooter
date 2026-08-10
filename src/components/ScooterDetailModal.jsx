@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  X, Settings2, Lightbulb, Battery, Monitor, Disc3, CircleDot,
+  X, Settings2, Lightbulb, Battery, AlertTriangle, Disc3, CircleDot,
   MapPin, Wrench, CheckCircle2, Clock, FileSpreadsheet, Pencil, Loader2, ShieldAlert
 } from 'lucide-react'
 import { saveDeviceCondition, completeMaintenanceRecord, exportScooterHistoryToExcel } from '../storage'
@@ -11,12 +11,12 @@ import { id as localeId } from 'date-fns/locale'
 
 // ── Device condition config ─────────────────────────────────
 const DEVICE_FIELDS = [
-  { key: 'setelan',  label: 'Setelan',  icon: Settings2, options: [['ada', 'Ada'], ['tidak', 'Tidak']] },
-  { key: 'lampu',    label: 'Lampu',    icon: Lightbulb, options: [['nyala', 'Nyala'], ['redup', 'Redup']] },
-  { key: 'baterai',  label: 'Baterai',  icon: Battery,   options: [['normal', 'Normal'], ['drop', 'Drop']] },
-  { key: 'monitor',  label: 'Monitor',  icon: Monitor,   options: [['normal', 'Normal'], ['e2', 'E2'], ['e4', 'E4'], ['e16', 'E16'], ['e6', 'E6']] },
-  { key: 'rem',      label: 'Rem',      icon: Disc3,     options: [['normal', 'Normal'], ['rusak', 'Rusak']] },
-  { key: 'ban',      label: 'Ban',      icon: CircleDot, options: [['normal', 'Normal'], ['rusak', 'Rusak']] },
+  { key: 'setelan',  label: 'Spakbor',     icon: Settings2,     options: [['ada', 'Ada'], ['tidak', 'Tidak']] },
+  { key: 'lampu',    label: 'Lampu',       icon: Lightbulb,     options: [['nyala', 'Nyala'], ['redup', 'Redup']] },
+  { key: 'baterai',  label: 'Baterai',     icon: Battery,       options: [['normal', 'Normal'], ['drop', 'Drop']] },
+  { key: 'monitor',  label: 'Jenis Error', icon: AlertTriangle, options: [['normal', 'Normal'], ['e2', 'E2'], ['e4', 'E4'], ['e16', 'E16'], ['e6', 'E6']] },
+  { key: 'rem',      label: 'Rem',         icon: Disc3,         options: [['normal', 'Normal'], ['rusak', 'Rusak']] },
+  { key: 'ban',      label: 'Ban',         icon: CircleDot,     options: [['botak', 'Botak'], ['tipis', 'Tipis'], ['aman', 'Aman']] },
 ]
 
 const STATUS_CONFIG = {
@@ -28,8 +28,14 @@ const STATUS_CONFIG = {
 
 function isBadField(key, value) {
   if (!value) return true
-  const bad = { setelan: 'tidak', lampu: 'redup', baterai: 'drop', monitor: 'e2', rem: 'rusak', ban: 'rusak' }
+  const bad = { setelan: 'tidak', lampu: 'redup', baterai: 'drop', monitor: 'e2', rem: 'rusak', ban: 'botak' }
   return value === bad[key] || (key === 'monitor' && value !== 'normal')
+}
+
+// Warning-tier fields (yellow) — e.g. tire tread is thin but still usable
+function isWarnField(key, value) {
+  if (!value) return false
+  return key === 'ban' && value === 'tipis'
 }
 
 function fmtDate(ts) {
@@ -47,7 +53,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     baterai: scooter.deviceCondition?.baterai ?? 'normal',
     monitor: scooter.deviceCondition?.monitor ?? 'normal',
     rem: scooter.deviceCondition?.rem ?? 'normal',
-    ban: scooter.deviceCondition?.ban ?? 'normal',
+    ban: scooter.deviceCondition?.ban ?? 'aman',
   }))
 
   // Close on Escape
@@ -204,16 +210,30 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                   // Read directly from saved data — no default fallback,
                   // so units never checked show as "Belum dicek"
                   const value = scooter.deviceCondition?.[f.key]
-                  const bad = value ? isBadField(f.key, value) : false
                   const checked = scooter.deviceCondition != null
+                  const bad = value ? isBadField(f.key, value) : false
+                  const warn = value ? isWarnField(f.key, value) : false
+                  const tone = !checked ? 'none' : bad ? 'bad' : warn ? 'warn' : 'good'
+                  const toneIcon = {
+                    none: 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]',
+                    bad:  'bg-[var(--color-red-subtle)] text-[var(--color-red)]',
+                    warn: 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)]',
+                    good: 'bg-[var(--color-green-subtle)] text-[var(--color-green)]',
+                  }[tone]
+                  const toneText = {
+                    none: 'text-[var(--color-subtle)]',
+                    bad:  'text-[var(--color-red)]',
+                    warn: 'text-[var(--color-warning)]',
+                    good: 'text-[var(--color-text)]',
+                  }[tone]
                   return (
                     <div key={f.key} className="flex items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2.5">
-                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${!checked ? 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]' : bad ? 'bg-[var(--color-red-subtle)] text-[var(--color-red)]' : 'bg-[var(--color-green-subtle)] text-[var(--color-green)]'}`}>
+                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${toneIcon}`}>
                         <f.icon size={13} />
                       </div>
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--color-muted)]">{f.label}</p>
-                        <p className={`text-[12px] font-bold ${!checked ? 'text-[var(--color-subtle)]' : bad ? 'text-[var(--color-red)]' : 'text-[var(--color-text)]'}`}>
+                        <p className={`text-[12px] font-bold ${toneText}`}>
                           {f.options.find(([v]) => v === value)?.[1] || 'Belum dicek'}
                         </p>
                       </div>

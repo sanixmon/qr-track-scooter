@@ -59,7 +59,7 @@ const DEVICE_VALUES = {
   baterai: ['normal', 'drop'],
   monitor: ['normal', 'e2', 'e4', 'e16', 'e6'],
   rem: ['normal', 'rusak'],
-  ban: ['normal', 'rusak']
+  ban: ['botak', 'tipis', 'aman']
 }
 
 // ── Scooters ───────────────────────────────────────────────
@@ -204,7 +204,7 @@ app.patch('/api/scooters/:id', (req, res) => {
 // ── Device Condition ───────────────────────────────────────
 app.put('/api/scooters/:id/device-condition', (req, res) => {
   const { id } = req.params
-  const scooter = db.prepare('SELECT id FROM scooters WHERE id = ?').get(id)
+  const scooter = db.prepare('SELECT * FROM scooters WHERE id = ?').get(id)
   if (!scooter) {
     return res.status(404).json({ error: `Scooter "${id}" tidak ditemukan.` })
   }
@@ -233,9 +233,28 @@ app.put('/api/scooters/:id/device-condition', (req, res) => {
     updated_at: new Date().toISOString()
   })
 
+  // Auto status: Jenis Error (monitor != normal) → rusak, back to normal → tersedia.
+  // Never override in-use (rented out) or maintenance units.
+  const isError = values.monitor !== null && values.monitor !== 'normal'
+  if (isError) {
+    if (scooter.status === 'available') {
+      db.prepare(`
+        UPDATE scooters SET status = 'rusak', maintenance_note = ?, last_updated = ?
+        WHERE id = ?
+      `).run(`Error ${values.monitor.toUpperCase()}`, new Date().toISOString(), id)
+    }
+  } else if (scooter.status === 'rusak') {
+    db.prepare(`
+      UPDATE scooters SET status = 'available', maintenance_note = NULL, last_updated = ?
+      WHERE id = ?
+    `).run(new Date().toISOString(), id)
+  }
+
   const dc = db.prepare('SELECT * FROM device_conditions WHERE scooter_id = ?').get(id)
+  const updatedScooter = db.prepare('SELECT * FROM scooters WHERE id = ?').get(id)
   res.json({
     success: true,
+    scooter: updatedScooter,
     device_condition: {
       setelan: dc.setelan,
       lampu: dc.lampu,

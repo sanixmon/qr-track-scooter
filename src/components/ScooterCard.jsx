@@ -111,22 +111,29 @@ export default function ScooterCard({ scooter, onClick }) {
   )
 }
 
-/** Tiny row of bad device components, e.g. "Baterai drop" */
+/** Tiny row of bad/warn device components, e.g. "Baterai drop" */
 function DeviceAlert({ condition }) {
   const bad = []
+  const warn = []
   if (condition.baterai === 'drop') bad.push('Baterai drop')
   if (condition.lampu === 'redup') bad.push('Lampu redup')
-  if (condition.monitor && condition.monitor !== 'normal') bad.push(`Monitor ${condition.monitor.toUpperCase()}`)
+  if (condition.monitor && condition.monitor !== 'normal') bad.push(`Error ${condition.monitor.toUpperCase()}`)
   if (condition.rem === 'rusak') bad.push('Rem rusak')
-  if (condition.ban === 'rusak') bad.push('Ban rusak')
-  if (condition.setelan === 'tidak') bad.push('Setelan tidak ada')
+  if (condition.ban === 'botak') bad.push('Ban botak')
+  if (condition.ban === 'tipis') warn.push('Ban tipis')
+  if (condition.setelan === 'tidak') bad.push('Spakbor tidak ada')
 
-  if (bad.length === 0) return null
+  if (bad.length === 0 && warn.length === 0) return null
   return (
     <div className="flex flex-wrap gap-1">
       {bad.map(b => (
         <span key={b} className="rounded bg-[var(--color-red-subtle)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--color-red)]">
           {b}
+        </span>
+      ))}
+      {warn.map(w => (
+        <span key={w} className="rounded bg-[var(--color-warning-subtle)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--color-warning)]">
+          {w}
         </span>
       ))}
     </div>

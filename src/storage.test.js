@@ -93,12 +93,24 @@ function apiHandler(method, path, body) {
 
     case method === 'PUT' && path.endsWith('/device-condition'): {
       const id = path.replace('/api/scooters/', '').replace('/device-condition', '')
-      if (!store.scooters.find(s => s.id === id)) {
+      const scooter = store.scooters.find(s => s.id === id)
+      if (!scooter) {
         return { ok: false, status: 404, body: { error: `Scooter "${id}" tidak ditemukan.` } }
       }
       const dc = { ...body, updated_at: new Date().toISOString() }
       store.deviceConditions[id] = dc
-      return { ok: true, body: { success: true, device_condition: dc } }
+      // Auto status: Jenis Error → rusak, normal → tersedia (mirror server)
+      const isError = dc.monitor !== null && dc.monitor !== undefined && dc.monitor !== 'normal'
+      if (isError) {
+        if (scooter.status === 'available') {
+          scooter.status = 'rusak'
+          scooter.maintenance_note = `Error ${dc.monitor.toUpperCase()}`
+        }
+      } else if (scooter.status === 'rusak') {
+        scooter.status = 'available'
+        scooter.maintenance_note = null
+      }
+      return { ok: true, body: { success: true, scooter, device_condition: dc } }
     }
 
     case method === 'GET' && path === '/api/maintenance-records':
@@ -333,13 +345,40 @@ describe('Device condition', () => {
     await addScooter({ id: 'SD-300', type: 'sd' })
 
     const dc = await saveDeviceCondition('SD-300', {
-      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'rusak'
+      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
     })
     expect(dc.baterai).toBe('drop')
     expect(dc.monitor).toBe('e4')
+    expect(dc.ban).toBe('botak')
 
     const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-300'))
-    expect(scooter.deviceCondition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4' }))
+    expect(scooter.deviceCondition).toEqual(expect.objectContaining({ baterai: 'drop', monitor: 'e4', ban: 'botak' }))
+  })
+
+  it('auto-marks scooter as rusak when Jenis Error is set', async () => {
+    const { saveDeviceCondition, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-301', type: 'sd' })
+
+    await saveDeviceCondition('SD-301', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'e2', rem: 'normal', ban: 'aman'
+    })
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-301'))
+    expect(scooter.status).toBe('rusak')
+    expect(scooter.maintenanceNote).toBe('Error E2')
+  })
+
+  it('auto-restores rusak scooter when Jenis Error is cleared', async () => {
+    const { saveDeviceCondition, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-302', type: 'sd' })
+    await saveDeviceCondition('SD-302', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'e6', rem: 'normal', ban: 'aman'
+    })
+    await saveDeviceCondition('SD-302', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman'
+    })
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-302'))
+    expect(scooter.status).toBe('available')
+    expect(scooter.maintenanceNote).toBeNull()
   })
 })
 

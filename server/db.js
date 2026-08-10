@@ -79,7 +79,7 @@ db.exec(`
     baterai TEXT CHECK(baterai IN ('normal', 'drop')),
     monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6')),
     rem TEXT CHECK(rem IN ('normal', 'rusak')),
-    ban TEXT CHECK(ban IN ('normal', 'rusak')),
+    ban TEXT CHECK(ban IN ('botak', 'tipis', 'aman')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -97,6 +97,49 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_maintenance_scooter ON maintenance_records(scooter_id);
 `)
+
+/**
+ * Migrate legacy device_conditions tables where ban only allowed
+ * ('normal', 'rusak') to the new tire tread options ('botak', 'tipis', 'aman').
+ * Old values are mapped: rusak → botak, normal → aman.
+ */
+export function migrateBanOptions(dbInstance) {
+  try {
+    const table = dbInstance.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'device_conditions'"
+    ).get()
+
+    if (!table || !table.sql) return
+    if (table.sql.includes("'botak'")) return // already migrated
+
+    dbInstance.exec(`
+      BEGIN;
+      CREATE TABLE device_conditions_new (
+        scooter_id TEXT PRIMARY KEY REFERENCES scooters(id) ON DELETE CASCADE,
+        setelan TEXT CHECK(setelan IN ('ada', 'tidak')),
+        lampu TEXT CHECK(lampu IN ('nyala', 'redup')),
+        baterai TEXT CHECK(baterai IN ('normal', 'drop')),
+        monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6')),
+        rem TEXT CHECK(rem IN ('normal', 'rusak')),
+        ban TEXT CHECK(ban IN ('botak', 'tipis', 'aman')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO device_conditions_new (scooter_id, setelan, lampu, baterai, monitor, rem, ban, updated_at)
+        SELECT
+          scooter_id, setelan, lampu, baterai, monitor, rem,
+          CASE ban WHEN 'rusak' THEN 'botak' WHEN 'normal' THEN 'aman' ELSE ban END,
+          updated_at
+        FROM device_conditions;
+      DROP TABLE device_conditions;
+      ALTER TABLE device_conditions_new RENAME TO device_conditions;
+      COMMIT;
+    `)
+  } catch (err) {
+    console.error('Migration error (ban options):', err)
+  }
+}
+
+migrateBanOptions(db)
 
 export function migrateUnpaddedIds(dbInstance) {
   try {
