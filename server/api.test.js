@@ -123,6 +123,18 @@ describe('PATCH /api/scooters/:id', () => {
     expect(data).toBeDefined()
   })
 
+  it('rejects invalid status value with 400 (Worst Case)', async () => {
+    const { status, data } = await api('PATCH', '/api/scooters/SD-5', { status: 'bebek' })
+    expect(status).toBe(400)
+    expect(data.error).toMatch(/Status tidak valid/)
+  })
+
+  it('rejects non-string maintenanceNote with 400 (Worst Case)', async () => {
+    const { status, data } = await api('PATCH', '/api/scooters/SD-5', { maintenanceNote: 12345 })
+    expect(status).toBe(400)
+    expect(data.error).toMatch(/maintenanceNote/)
+  })
+
   it('clears maintenance note when setting to available', async () => {
     await api('PATCH', '/api/scooters/SD-5', { status: 'available', maintenanceNote: '' })
     const { data } = await api('GET', '/api/scooters')
@@ -195,12 +207,39 @@ describe('PUT /api/scooters/:id/device-condition', () => {
     expect(data.device_condition.monitor).toBe('lain')
     expect(data.device_condition.monitor_detail).toBe('Spakbor retak')
     expect(data.scooter.status).toBe('rusak')
-    expect(data.scooter.maintenance_note).toBe('Spakbor retak')
+    expect(data.scooter.maintenance_note).toBe('Error Spakbor retak')
   })
 
   it('auto-restores rusak scooter to available when Jenis Error is cleared', async () => {
     await api('PATCH', '/api/scooters/SD-41', { status: 'rusak', maintenanceNote: 'Error E4' })
     const { data } = await api('PUT', '/api/scooters/SD-41/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman'
+    })
+    expect(data.scooter.status).toBe('available')
+    expect(data.scooter.maintenance_note).toBeNull()
+  })
+
+  it('does not auto-revert a manually-marked rusak unit (Worst Case)', async () => {
+    // Unit ditandai rusak MANUAL (bukan dari Jenis Error otomatis)
+    await api('POST', '/api/scooters', { id: 'SD-46', type: 'sd' })
+    await api('PATCH', '/api/scooters/SD-46', { status: 'rusak', maintenanceNote: 'Rem blong' })
+
+    // Simpan kondisi dengan monitor normal → jangan auto-balik ke available
+    const { data } = await api('PUT', '/api/scooters/SD-46/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'rusak', ban: 'aman'
+    })
+    expect(data.scooter.status).toBe('rusak')
+    expect(data.scooter.maintenance_note).toBe('Rem blong')
+  })
+
+  it('auto-reverts only when rusak note was auto-generated (Error pattern)', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-47', type: 'sd' })
+    // Otomatis jadi rusak via Jenis Error
+    await api('PUT', '/api/scooters/SD-47/device-condition', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'e16', rem: 'normal', ban: 'aman'
+    })
+    // Normalisasi → kembali tersedia
+    const { data } = await api('PUT', '/api/scooters/SD-47/device-condition', {
       setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman'
     })
     expect(data.scooter.status).toBe('available')
@@ -368,6 +407,18 @@ describe('POST /api/scooters/:id/toggle', () => {
     expect(entries[0].action).toBe('return')
     expect(entries[1].action).toBe('checkout')
   })
+
+  it('deleting a scooter cascades its activity log (FK)', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-60', type: 'sd' })
+    await api('POST', '/api/scooters/SD-60/toggle', {})
+    await api('POST', '/api/scooters/SD-60/toggle', {})
+    const before = await api('GET', '/api/activity-log')
+    expect(before.data.filter(e => e.scooter_id === 'SD-60').length).toBe(2)
+
+    await api('DELETE', '/api/scooters/SD-60')
+    const after = await api('GET', '/api/activity-log')
+    expect(after.data.filter(e => e.scooter_id === 'SD-60').length).toBe(0)
+  })
 })
 
 // ── Activity Log ───────────────────────────────────────────
@@ -433,11 +484,12 @@ describe('migrateUnpaddedIds migration', () => {
 
 // ── Backup Tests ───────────────────────────────────────────
 describe('POST & GET /api/backup', () => {
-  it('triggers DB backup creation', async () => {
+  it('triggers DB backup creation without leaking filesystem path', async () => {
     const { status, data } = await api('POST', '/api/backup')
     expect(status).toBe(200)
     expect(data.success).toBe(true)
     expect(data.filename).toBeDefined()
+    expect(data.path).toBeUndefined()
   })
 
   it('downloads DB backup file', async () => {

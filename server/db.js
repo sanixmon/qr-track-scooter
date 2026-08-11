@@ -27,7 +27,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS activity_log (
     id TEXT PRIMARY KEY,
-    scooter_id TEXT NOT NULL,
+    scooter_id TEXT NOT NULL REFERENCES scooters(id) ON DELETE CASCADE ON UPDATE CASCADE,
     scooter_type TEXT NOT NULL,
     action TEXT NOT NULL CHECK(action IN ('checkout', 'return')),
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
@@ -219,7 +219,12 @@ export function migrateUnpaddedIds(dbInstance) {
           const num = parseInt(parts[1], 10)
           if (!isNaN(num)) {
             const newId = `${prefix}-${num}`
-            updateLog.run(newId, log.scooter_id)
+            // Only rename logs whose target scooter exists — with a foreign key
+            // active (fresh DBs), updating to a non-existent id would violate it.
+            const targetExists = checkExists.get(newId)?.count > 0
+            if (targetExists) {
+              updateLog.run(newId, log.scooter_id)
+            }
           }
         }
       }
@@ -232,5 +237,41 @@ export function migrateUnpaddedIds(dbInstance) {
 }
 
 migrateUnpaddedIds(db)
+
+/**
+ * Rebuild legacy activity_log tables that lack a foreign key so that deleting a
+ * scooter cascades and removes its history rows (no more orphaned logs).
+ */
+export function migrateActivityLogFk(dbInstance) {
+  try {
+    const table = dbInstance.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'activity_log'"
+    ).get()
+
+    if (!table || !table.sql) return
+    if (table.sql.includes('REFERENCES scooters(id)')) return // already migrated
+
+    dbInstance.exec(`
+      BEGIN;
+      CREATE TABLE activity_log_new (
+        id TEXT PRIMARY KEY,
+        scooter_id TEXT NOT NULL REFERENCES scooters(id) ON DELETE CASCADE ON UPDATE CASCADE,
+        scooter_type TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('checkout', 'return')),
+        timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO activity_log_new (id, scooter_id, scooter_type, action, timestamp)
+        SELECT id, scooter_id, scooter_type, action, timestamp FROM activity_log
+        WHERE scooter_id IN (SELECT id FROM scooters);
+      DROP TABLE activity_log;
+      ALTER TABLE activity_log_new RENAME TO activity_log;
+      COMMIT;
+    `)
+  } catch (err) {
+    console.error('Migration error (activity_log FK):', err)
+  }
+}
+
+migrateActivityLogFk(db)
 
 export default db

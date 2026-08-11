@@ -71,6 +71,14 @@ function apiHandler(method, path, body) {
       const id = path.replace('/api/scooters/', '')
       const idx = store.scooters.findIndex(s => s.id === id)
       if (idx === -1) return { ok: false, status: 404, body: { error: `Scooter "${id}" tidak ditemukan.` } }
+      // Mirror server-side validation: reject invalid status / non-string note
+      const VALID_STATUSES = ['available', 'in-use', 'rusak', 'maintenance']
+      if ('status' in body && !VALID_STATUSES.includes(body.status)) {
+        return { ok: false, status: 400, body: { error: 'Status tidak valid. Pilih salah satu: ' + VALID_STATUSES.join(', ') + '.' } }
+      }
+      if ('maintenanceNote' in body && body.maintenanceNote !== null && body.maintenanceNote !== undefined && typeof body.maintenanceNote !== 'string') {
+        return { ok: false, status: 400, body: { error: 'maintenanceNote harus berupa teks atau null.' } }
+      }
       if ('status' in body) store.scooters[idx].status = body.status
       if ('maintenanceNote' in body) store.scooters[idx].maintenance_note = body.maintenanceNote ?? null
       if (body.status === 'maintenance' && body.location) {
@@ -105,15 +113,17 @@ function apiHandler(method, path, body) {
       }
       store.deviceConditions[id] = dc
       // Auto status: Jenis Error → rusak, normal → tersedia (mirror server)
+      // Auto-marked units carry a maintenance_note starting with "Error ",
+      // so only those are ever auto-reverted (never manual rusak units).
       const isError = dc.monitor !== null && dc.monitor !== undefined && dc.monitor !== 'normal'
       if (isError) {
         if (scooter.status === 'available') {
           scooter.status = 'rusak'
           scooter.maintenance_note = dc.monitor === 'lain'
-            ? (dc.monitor_detail || 'Lain-lain')
+            ? `Error ${dc.monitor_detail || 'Lain-lain'}`
             : `Error ${dc.monitor.toUpperCase()}`
         }
-      } else if (scooter.status === 'rusak') {
+      } else if (scooter.status === 'rusak' && scooter.maintenance_note && /^Error /i.test(scooter.maintenance_note)) {
         scooter.status = 'available'
         scooter.maintenance_note = null
       }
@@ -386,7 +396,20 @@ describe('Device condition', () => {
     expect(scooter.deviceCondition.monitor).toBe('lain')
     expect(scooter.monitorDetail).toBe('Spakbor retak')
     expect(scooter.status).toBe('rusak')
-    expect(scooter.maintenanceNote).toBe('Spakbor retak')
+    expect(scooter.maintenanceNote).toBe('Error Spakbor retak')
+  })
+
+  it('does not auto-revert a manually-marked rusak unit (Worst Case)', async () => {
+    const { saveDeviceCondition, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-304', type: 'sd' })
+    await updateScooter('SD-304', { status: 'rusak', maintenanceNote: 'Rem blong' })
+
+    await saveDeviceCondition('SD-304', {
+      setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'rusak', ban: 'aman'
+    })
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-304'))
+    expect(scooter.status).toBe('rusak')
+    expect(scooter.maintenanceNote).toBe('Rem blong')
   })
 
   it('auto-restores rusak scooter when Jenis Error is cleared', async () => {
@@ -401,6 +424,13 @@ describe('Device condition', () => {
     const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-302'))
     expect(scooter.status).toBe('available')
     expect(scooter.maintenanceNote).toBeNull()
+  })
+
+  it('throws 400 when sending invalid status via updateScooter (Worst Case)', async () => {
+    const { updateScooter } = await import('./storage')
+    await addScooter({ id: 'SD-305', type: 'sd' })
+    await expect(updateScooter('SD-305', { status: 'bebek' }))
+      .rejects.toThrow(/Status tidak valid/)
   })
 })
 

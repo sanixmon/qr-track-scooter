@@ -5,7 +5,17 @@ import db from './db.js'
 const app = express()
 const PORT = process.env.PORT || 3005
 
-app.use(cors())
+// Restrict cross-origin access to known frontend origins.
+// Same-origin (nginx reverse proxy) requests send no Origin header → always allowed.
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:4173')
+  .split(',').map(s => s.trim()).filter(Boolean)
+
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || CORS_ORIGINS.includes(origin)) return cb(null, true)
+    return cb(null, false)
+  }
+}))
 app.use(express.json())
 
 // Real-time data must never be cached by browsers or HTTP clients
@@ -152,6 +162,14 @@ app.patch('/api/scooters/:id', (req, res) => {
     return res.status(404).json({ error: `Scooter "${id}" tidak ditemukan.` })
   }
 
+  const VALID_STATUSES = ['available', 'in-use', 'rusak', 'maintenance']
+  if ('status' in fields && !VALID_STATUSES.includes(fields.status)) {
+    return res.status(400).json({ error: `Status tidak valid. Pilih salah satu: ${VALID_STATUSES.join(', ')}.` })
+  }
+  if ('maintenanceNote' in fields && fields.maintenanceNote !== null && fields.maintenanceNote !== undefined && typeof fields.maintenanceNote !== 'string') {
+    return res.status(400).json({ error: 'maintenanceNote harus berupa teks atau null.' })
+  }
+
   const updates = []
   const params = {}
 
@@ -241,18 +259,24 @@ app.put('/api/scooters/:id/device-condition', (req, res) => {
 
   // Auto status: Jenis Error (monitor != normal) → rusak, back to normal → tersedia.
   // Never override in-use (rented out) or maintenance units.
+  // Auto-marked units get maintenance_note starting with "Error " so we can tell
+  // them apart from manually-marked rusak units and never auto-revert those.
   const isError = values.monitor !== null && values.monitor !== 'normal'
   if (isError) {
     if (scooter.status === 'available') {
       const note = values.monitor === 'lain'
-        ? (detail || 'Lain-lain')
+        ? `Error ${detail || 'Lain-lain'}`
         : `Error ${values.monitor.toUpperCase()}`
       db.prepare(`
         UPDATE scooters SET status = 'rusak', maintenance_note = ?, last_updated = ?
         WHERE id = ?
       `).run(note, new Date().toISOString(), id)
     }
-  } else if (scooter.status === 'rusak') {
+  } else if (
+    scooter.status === 'rusak' &&
+    scooter.maintenance_note && /^Error /i.test(scooter.maintenance_note)
+  ) {
+    // Only auto-revert units we auto-marked; leave manually-marked rusak units alone.
     db.prepare(`
       UPDATE scooters SET status = 'available', maintenance_note = NULL, last_updated = ?
       WHERE id = ?
@@ -389,12 +413,15 @@ import { createDatabaseBackup } from './backup.js'
 app.post('/api/backup', async (req, res, next) => {
   try {
     const result = await createDatabaseBackup()
-    res.json({ success: true, ...result })
+    // Never leak server filesystem paths to the client.
+    res.json({ success: true, filename: result.filename, timestamp: result.timestamp })
   } catch (err) {
     next(err)
   }
 })
 
+// Single-shot download: creates a backup and streams it immediately.
+// (No POST-then-GET round trip, so one download = one backup file.)
 app.get('/api/backup/download', async (req, res, next) => {
   try {
     const result = await createDatabaseBackup()
@@ -411,13 +438,16 @@ app.get('/api/export', (req, res) => {
 })
 
 app.use((err, req, res, _next) => { // eslint-disable-line no-unused-vars
+  // Log full details server-side, but never leak internals to clients.
   console.error('Server error:', err)
-  res.status(500).json({ error: err.message || 'Internal server error' })
+  res.status(500).json({ error: 'Terjadi kesalahan pada server. Silakan coba lagi.' })
 })
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`TrackScooter API running on http://localhost:${PORT}`)
+  // Bind to loopback only — nginx (or another reverse proxy) exposes the API
+  // to the public. Never listen on all interfaces without auth in front.
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`TrackScooter API running on http://127.0.0.1:${PORT}`)
   })
 }
 

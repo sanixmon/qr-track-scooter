@@ -182,11 +182,7 @@ export async function downloadAllScooterQRs(scooters) {
 
 export async function downloadDatabaseBackup() {
   try {
-    const backupInfo = await api('/api/backup', { method: 'POST' })
-    if (!backupInfo.success) {
-      throw new Error(backupInfo.error || 'Gagal membuat file backup.')
-    }
-
+    // Single-shot: GET creates + streams one backup file (no POST round trip).
     const res = await fetch(`${API}/api/backup/download`)
     if (!res.ok) {
       throw new Error(`Gagal mengunduh backup (HTTP ${res.status})`)
@@ -197,7 +193,7 @@ export async function downloadDatabaseBackup() {
     const a = document.createElement('a')
     a.style.display = 'none'
     a.href = url
-    a.download = backupInfo.filename || `trackscooter_backup_${new Date().toISOString().slice(0, 10)}.db`
+    a.download = `trackscooter_backup_${new Date().toISOString().slice(0, 10)}.db`
     document.body.appendChild(a)
     a.click()
 

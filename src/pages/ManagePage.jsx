@@ -43,14 +43,20 @@ export default function ManagePage() {
     }
   }
 
-  // Calculate today's checkout frequency per scooter
+  // Calculate today's checkout frequency per scooter (local date, WIB-safe)
+  const localDateKey = (d) => {
+    const dt = d instanceof Date ? d : new Date(d)
+    if (isNaN(dt.getTime())) return null
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+  }
+
   const getTodayCheckoutCount = (scooterId) => {
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = localDateKey(new Date())
     return (activityLog || []).filter(e =>
       e.scooterId === scooterId &&
       e.action === 'checkout' &&
       e.timestamp &&
-      new Date(e.timestamp).toISOString().slice(0, 10) === todayStr
+      localDateKey(new Date(e.timestamp)) === todayStr
     ).length
   }
 
