@@ -9,6 +9,7 @@
     "dev:all": "node -e \"const{spawn}=require('child_process');const c=spawn('node',['--watch','server/server.js'],{stdio:'inherit'});const v=spawn('npx','vite',{stdio:'inherit',shell:true});process.on('SIGINT',()=>{c.kill();v.kill();process.exit()})\"",
     "build": "vite build",
     "test": "vitest run",
+    "test:context": "vitest run context",
     "test:watch": "vitest",
     "lint": "eslint .",
     "preview": "vite preview",
