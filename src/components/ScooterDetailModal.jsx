@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   X, Settings2, Lightbulb, Battery, AlertTriangle, Disc3, CircleDot,
-  MapPin, Wrench, Clock, FileSpreadsheet, Loader2, ShieldAlert, CheckCircle2
+  MapPin, Wrench, Clock, FileSpreadsheet, Loader2, ShieldAlert, CheckCircle2, ChevronDown
 } from 'lucide-react'
 import { saveDeviceCondition, completeMaintenanceRecord, exportScooterHistoryToExcel } from '../storage'
 import { showToastNotification, showErrorAlert, showConfirmDialog } from '../utils/swal'
@@ -55,12 +55,10 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
       monitorDetail: c?.monitor_detail ?? '',
     }
   })
-  const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const savedRef = useRef(JSON.stringify(condition))
-  const latestRef = useRef(condition)
-  const savingRef = useRef(false)
+  // Snapshot of the last persisted condition — drives the dirty check.
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(condition))
 
   // Close on Escape
   useEffect(() => {
@@ -69,60 +67,31 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // ── Autosave with debounce ──────────────────────────────
-  // ── Autosave with debounce (serialized, newest wins) ────
-  // Saves are drained one-at-a-time; if a newer edit arrives mid-save
-  // it is queued in latestRef and saved right after, so a stale snapshot
-  // can never overwrite a newer one on the server.
-  const runSave = useCallback(async () => {
-    if (savingRef.current) return
-    savingRef.current = true
+  // Dirty tracking — any change enables the Save button.
+  const isDirty = JSON.stringify(condition) !== savedSnapshot
+
+  const setField = (key, value) => {
+    setCondition(prev => ({ ...prev, [key]: value }))
+  }
+
+  // Explicit save — no debounce, no waiting on a checkmark.
+  const handleSave = async () => {
+    if (saving || !isDirty) return
     setSaving(true)
-    let savedAny = false
     try {
-      while (latestRef.current) {
-        const target = latestRef.current
-        latestRef.current = null
-        const serialized = JSON.stringify(target)
-        if (serialized === savedRef.current) continue
-        await saveDeviceCondition(scooter.id, target)
-        savedRef.current = serialized
-        setTouched(false)
-        savedAny = true
-      }
-      if (savedAny) {
-        await onRefresh()
-        showToastNotification({ icon: 'success', title: 'Kondisi perangkat disimpan' })
-      }
+      await saveDeviceCondition(scooter.id, condition)
+      setSavedSnapshot(JSON.stringify(condition))
+      await onRefresh()
+      showToastNotification({ icon: 'success', title: 'Kondisi perangkat disimpan' })
     } catch (err) {
       showErrorAlert('Gagal Simpan', err.message)
     } finally {
-      savingRef.current = false
       setSaving(false)
     }
-  }, [scooter.id, onRefresh])
-
-  // Every change schedules a save 1.2s after the last tap.
-  useEffect(() => {
-    latestRef.current = condition
-    const t = setTimeout(() => runSave(), 1200)
-    return () => clearTimeout(t)
-  }, [condition, runSave])
-
-  const cycleField = (key, options) => {
-    setTouched(true)
-    setCondition(prev => {
-      const idx = options.findIndex(([v]) => v === prev[key])
-      const next = options[(idx + 1) % options.length][0]
-      return { ...prev, [key]: next }
-    })
   }
 
   const handleMarkAllNormal = () => {
-    const fresh = { ...DEFAULT_CONDITION }
-    setCondition(fresh)
-    latestRef.current = fresh
-    runSave()
+    setCondition({ ...DEFAULT_CONDITION })
   }
 
   const statusConf = STATUS_CONFIG[scooter.status] || STATUS_CONFIG.available
@@ -135,9 +104,9 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     .filter(m => m.scooterId === scooter.id)
     .slice(0, 15)
 
-  // Effective value: live state while editing, saved data otherwise —
+  // Effective value: unsaved edits win; otherwise show persisted data —
   // so units never checked keep showing "Belum dicek".
-  const effValue = (key) => touched ? condition[key] : scooter.deviceCondition?.[key]
+  const effValue = (key) => isDirty ? condition[key] : (scooter.deviceCondition?.[key] ?? '')
 
   const handleCompleteMaintenance = async (record) => {
     const res = await showConfirmDialog({
@@ -212,36 +181,47 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
             )}
           </div>
 
-          {/* ── Device Condition (tap to edit, autosaves) ── */}
+          {/* ── Device Condition (dropdown per field + Save eksplisit) ── */}
           <div>
-            <div className="mb-1.5 flex items-center justify-between">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
                   Kondisi Perangkat
                 </h3>
-                {saving && <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />}
+                {isDirty && !saving && (
+                  <span className="rounded-full bg-[var(--color-warning-subtle)] px-2 py-0.5 text-[9px] font-bold text-[var(--color-warning)]">
+                    Belum disimpan
+                  </span>
+                )}
               </div>
-              <button
-                onClick={handleMarkAllNormal}
-                disabled={saving}
-                className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--color-green)] transition-colors hover:border-[var(--color-green)] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <CheckCircle2 size={11} />
-                Semua Normal
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleMarkAllNormal}
+                  disabled={saving}
+                  className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--color-green)] transition-colors hover:border-[var(--color-green)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle2 size={11} />
+                  Semua Normal
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !isDirty}
+                  className="flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                  {saving ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
             <p className="mb-2.5 text-[10px] text-[var(--color-subtle)]">
-              Ketuk field untuk mengganti nilai — tersimpan otomatis
+              Pilih nilai pada tiap kolom, lalu tekan Simpan
             </p>
 
             <div className="grid grid-cols-2 gap-2">
               {DEVICE_FIELDS_WITH_ICONS.map(f => {
                 const value = effValue(f.key)
-                const checked = touched || scooter.deviceCondition != null
+                const checked = isDirty || scooter.deviceCondition != null
                 const tone = fieldTone(f.key, value, checked)
-                const displayValue = (f.key === 'monitor' && value === 'lain')
-                  ? (touched ? (condition.monitorDetail || 'Lain') : (scooter.deviceCondition?.monitor_detail || 'Lain'))
-                  : (f.options.find(([v]) => v === value)?.[1] || 'Belum dicek')
                 const toneIcon = {
                   none: 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]',
                   bad:  'bg-[var(--color-red-subtle)] text-[var(--color-red)]',
@@ -255,22 +235,30 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                   good: 'text-[var(--color-text)]',
                 }[tone]
                 return (
-                  <button
+                  <label
                     key={f.key}
-                    onClick={() => cycleField(f.key, f.options)}
-                    title={`Ketuk untuk mengubah ${f.label}`}
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2.5 text-left transition-all hover:border-[var(--color-accent)] hover:shadow-sm active:scale-[0.98] ${touched ? 'ring-1 ring-[var(--color-accent)]/40' : ''}`}
+                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2.5 text-left transition-all hover:border-[var(--color-accent)] hover:shadow-sm ${isDirty ? 'ring-1 ring-[var(--color-accent)]/40' : ''}`}
                   >
                     <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${toneIcon}`}>
                       <f.icon size={13} />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-[10px] text-[var(--color-muted)]">{f.label}</p>
-                      <p className={`text-[12px] font-bold ${toneText}`}>
-                        {displayValue}
-                      </p>
+                      <div className="relative">
+                        <select
+                          value={value}
+                          onChange={e => setField(f.key, e.target.value)}
+                          className={`w-full cursor-pointer appearance-none bg-transparent pr-4 text-[12px] font-bold outline-none ${toneText}`}
+                        >
+                          {value === '' && <option value="">Belum dicek</option>}
+                          {f.options.map(([v, label]) => (
+                            <option key={v} value={v}>{label}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[var(--color-subtle)]" />
+                      </div>
                     </div>
-                  </button>
+                  </label>
                 )
               })}
             </div>
@@ -281,11 +269,8 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                 <AlertTriangle size={13} className="shrink-0 text-[var(--color-warning)]" />
                 <input
                   type="text"
-                  value={touched ? condition.monitorDetail : (scooter.deviceCondition?.monitor_detail || '')}
-                  onChange={e => {
-                    setTouched(true)
-                    setCondition(prev => ({ ...prev, monitorDetail: e.target.value }))
-                  }}
+                  value={condition.monitorDetail}
+                  onChange={e => setField('monitorDetail', e.target.value)}
                   placeholder="Ketik jenis error lainnya..."
                   maxLength={150}
                   className="w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-subtle)] focus:border-[var(--color-accent)] transition-all"
