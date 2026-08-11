@@ -24,7 +24,6 @@ export default defineConfig({
         // Vite 8 (rolldown) requires manualChunks as a function
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('@supabase'))    return 'vendor-supabase'
             if (id.includes('html5-qrcode') || id.includes('/qrcode/')) return 'vendor-qr'
             if (id.includes('date-fns'))     return 'vendor-date'
             if (id.includes('lucide-react')) return 'vendor-icons'

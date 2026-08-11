@@ -20,7 +20,6 @@
     "pm2:logs": "npx pm2 logs trackscooter-api"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.2",
     "@tailwindcss/vite": "^4.3.0",
     "date-fns": "^4.4.0",
     "html5-qrcode": "^2.3.8",
