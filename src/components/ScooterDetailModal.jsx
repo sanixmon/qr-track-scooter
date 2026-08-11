@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   X, Settings2, Lightbulb, Battery, AlertTriangle, Disc3, CircleDot,
-  MapPin, Wrench, CheckCircle2, Clock, FileSpreadsheet, Pencil, Loader2, ShieldAlert
+  MapPin, Wrench, Clock, FileSpreadsheet, Loader2, ShieldAlert, CheckCircle2
 } from 'lucide-react'
 import { saveDeviceCondition, completeMaintenanceRecord, exportScooterHistoryToExcel } from '../storage'
 import { showToastNotification, showErrorAlert, showConfirmDialog } from '../utils/swal'
@@ -20,6 +20,16 @@ const DEVICE_FIELDS_WITH_ICONS = DEVICE_FIELDS.map(f => ({
   }[f.key] || Settings2,
 }))
 
+const DEFAULT_CONDITION = {
+  setelan: 'ada',
+  lampu: 'nyala',
+  baterai: 'normal',
+  monitor: 'normal',
+  rem: 'normal',
+  ban: 'aman',
+  monitorDetail: '',
+}
+
 const STATUS_CONFIG = {
   available:   { dot: 'bg-[var(--color-green)]',    text: 'text-[var(--color-green)]' },
   'in-use':    { dot: 'bg-[var(--color-accent)]',   text: 'text-[var(--color-accent)]' },
@@ -33,18 +43,24 @@ function fmtDate(ts) {
 }
 
 export default function ScooterDetailModal({ scooter, activityLog, maintenanceRecords, onClose, onRefresh }) {
-  const [editing, setEditing] = useState(false)
+  const [condition, setCondition] = useState(() => {
+    const c = scooter.deviceCondition
+    return {
+      setelan: c?.setelan ?? DEFAULT_CONDITION.setelan,
+      lampu: c?.lampu ?? DEFAULT_CONDITION.lampu,
+      baterai: c?.baterai ?? DEFAULT_CONDITION.baterai,
+      monitor: c?.monitor ?? DEFAULT_CONDITION.monitor,
+      rem: c?.rem ?? DEFAULT_CONDITION.rem,
+      ban: c?.ban ?? DEFAULT_CONDITION.ban,
+      monitorDetail: c?.monitor_detail ?? '',
+    }
+  })
+  const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [condition, setCondition] = useState(() => ({
-    setelan: scooter.deviceCondition?.setelan ?? 'ada',
-    lampu: scooter.deviceCondition?.lampu ?? 'nyala',
-    baterai: scooter.deviceCondition?.baterai ?? 'normal',
-    monitor: scooter.deviceCondition?.monitor ?? 'normal',
-    rem: scooter.deviceCondition?.rem ?? 'normal',
-    ban: scooter.deviceCondition?.ban ?? 'aman',
-    monitorDetail: scooter.deviceCondition?.monitor_detail ?? '',
-  }))
+  const savedRef = useRef(JSON.stringify(condition))
+  const latestRef = useRef(condition)
+  const savingRef = useRef(false)
 
   // Close on Escape
   useEffect(() => {
@@ -52,6 +68,62 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  // ── Autosave with debounce ──────────────────────────────
+  // ── Autosave with debounce (serialized, newest wins) ────
+  // Saves are drained one-at-a-time; if a newer edit arrives mid-save
+  // it is queued in latestRef and saved right after, so a stale snapshot
+  // can never overwrite a newer one on the server.
+  const runSave = useCallback(async () => {
+    if (savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
+    let savedAny = false
+    try {
+      while (latestRef.current) {
+        const target = latestRef.current
+        latestRef.current = null
+        const serialized = JSON.stringify(target)
+        if (serialized === savedRef.current) continue
+        await saveDeviceCondition(scooter.id, target)
+        savedRef.current = serialized
+        setTouched(false)
+        savedAny = true
+      }
+      if (savedAny) {
+        await onRefresh()
+        showToastNotification({ icon: 'success', title: 'Kondisi perangkat disimpan' })
+      }
+    } catch (err) {
+      showErrorAlert('Gagal Simpan', err.message)
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }, [scooter.id, onRefresh])
+
+  // Every change schedules a save 1.2s after the last tap.
+  useEffect(() => {
+    latestRef.current = condition
+    const t = setTimeout(() => runSave(), 1200)
+    return () => clearTimeout(t)
+  }, [condition, runSave])
+
+  const cycleField = (key, options) => {
+    setTouched(true)
+    setCondition(prev => {
+      const idx = options.findIndex(([v]) => v === prev[key])
+      const next = options[(idx + 1) % options.length][0]
+      return { ...prev, [key]: next }
+    })
+  }
+
+  const handleMarkAllNormal = () => {
+    const fresh = { ...DEFAULT_CONDITION }
+    setCondition(fresh)
+    latestRef.current = fresh
+    runSave()
+  }
 
   const statusConf = STATUS_CONFIG[scooter.status] || STATUS_CONFIG.available
 
@@ -63,19 +135,9 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     .filter(m => m.scooterId === scooter.id)
     .slice(0, 15)
 
-  const handleSaveCondition = async () => {
-    setSaving(true)
-    try {
-      await saveDeviceCondition(scooter.id, condition)
-      await onRefresh()
-      setEditing(false)
-      showToastNotification({ icon: 'success', title: 'Kondisi perangkat disimpan' })
-    } catch (err) {
-      showErrorAlert('Gagal Simpan', err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
+  // Effective value: live state while editing, saved data otherwise —
+  // so units never checked keep showing "Belum dicek".
+  const effValue = (key) => touched ? condition[key] : scooter.deviceCondition?.[key]
 
   const handleCompleteMaintenance = async (record) => {
     const res = await showConfirmDialog({
@@ -150,97 +212,84 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
             )}
           </div>
 
-          {/* ── Device Condition ── */}
+          {/* ── Device Condition (tap to edit, autosaves) ── */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
-                Kondisi Perangkat
-              </h3>
+            <div className="mb-1.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--color-subtle)]">
+                  Kondisi Perangkat
+                </h3>
+                {saving && <Loader2 size={12} className="animate-spin text-[var(--color-accent)]" />}
+              </div>
               <button
-                onClick={() => setEditing(!editing)}
-                className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-[var(--color-accent)] transition-colors hover:text-[var(--color-accent-hover)]"
+                onClick={handleMarkAllNormal}
+                disabled={saving}
+                className="flex cursor-pointer items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--color-green)] transition-colors hover:border-[var(--color-green)] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Pencil size={11} />
-                {editing ? 'Batal' : 'Edit'}
+                <CheckCircle2 size={11} />
+                Semua Normal
               </button>
             </div>
+            <p className="mb-2.5 text-[10px] text-[var(--color-subtle)]">
+              Ketuk field untuk mengganti nilai — tersimpan otomatis
+            </p>
 
-            {editing ? (
-              <div className="space-y-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3.5">
-                {DEVICE_FIELDS_WITH_ICONS.map(f => (
-                  <div key={f.key} className="flex items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--color-muted)]">
-                      <f.icon size={13} className="text-[var(--color-subtle)]" />
-                      {f.label}
-                    </label>
-                    {f.key === 'monitor' && condition.monitor === 'lain' ? (
-                      <input
-                        type="text"
-                        value={condition.monitorDetail || ''}
-                        onChange={e => setCondition({ ...condition, monitorDetail: e.target.value })}
-                        placeholder="Ketik manual jenis lainnya..."
-                        maxLength={150}
-                        className="w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-all"
-                      />
-                    ) : (
-                      <select
-                        value={condition[f.key] || ''}
-                        onChange={e => setCondition({ ...condition, [f.key]: e.target.value })}
-                        className="w-36 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] cursor-pointer transition-all"
-                      >
-                        {f.options.map(([val, lbl]) => (
-                          <option key={val} value={val}>{lbl}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                ))}
-                <button
-                  onClick={handleSaveCondition}
-                  disabled={saving}
-                  className="mt-1 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] py-2 text-[12px] font-semibold text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                  {saving ? 'Menyimpan...' : 'Simpan Kondisi'}
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {DEVICE_FIELDS_WITH_ICONS.map(f => {
-                  // Read directly from saved data — no default fallback,
-                  // so units never checked show as "Belum dicek"
-                  const value = scooter.deviceCondition?.[f.key]
-                  const checked = scooter.deviceCondition != null
-                  const tone = fieldTone(f.key, value, checked)
-                  const displayValue = (f.key === 'monitor' && value === 'lain' && scooter.deviceCondition?.monitor_detail)
-                    ? scooter.deviceCondition.monitor_detail
-                    : (f.options.find(([v]) => v === value)?.[1] || 'Belum dicek')
-                  const toneIcon = {
-                    none: 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]',
-                    bad:  'bg-[var(--color-red-subtle)] text-[var(--color-red)]',
-                    warn: 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)]',
-                    good: 'bg-[var(--color-green-subtle)] text-[var(--color-green)]',
-                  }[tone]
-                  const toneText = {
-                    none: 'text-[var(--color-subtle)]',
-                    bad:  'text-[var(--color-red)]',
-                    warn: 'text-[var(--color-warning)]',
-                    good: 'text-[var(--color-text)]',
-                  }[tone]
-                  return (
-                    <div key={f.key} className="flex items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2.5">
-                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${toneIcon}`}>
-                        <f.icon size={13} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-[var(--color-muted)]">{f.label}</p>
-                        <p className={`text-[12px] font-bold ${toneText}`}>
-                          {displayValue}
-                        </p>
-                      </div>
+            <div className="grid grid-cols-2 gap-2">
+              {DEVICE_FIELDS_WITH_ICONS.map(f => {
+                const value = effValue(f.key)
+                const checked = touched || scooter.deviceCondition != null
+                const tone = fieldTone(f.key, value, checked)
+                const displayValue = (f.key === 'monitor' && value === 'lain')
+                  ? (touched ? (condition.monitorDetail || 'Lain') : (scooter.deviceCondition?.monitor_detail || 'Lain'))
+                  : (f.options.find(([v]) => v === value)?.[1] || 'Belum dicek')
+                const toneIcon = {
+                  none: 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]',
+                  bad:  'bg-[var(--color-red-subtle)] text-[var(--color-red)]',
+                  warn: 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)]',
+                  good: 'bg-[var(--color-green-subtle)] text-[var(--color-green)]',
+                }[tone]
+                const toneText = {
+                  none: 'text-[var(--color-subtle)]',
+                  bad:  'text-[var(--color-red)]',
+                  warn: 'text-[var(--color-warning)]',
+                  good: 'text-[var(--color-text)]',
+                }[tone]
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => cycleField(f.key, f.options)}
+                    title={`Ketuk untuk mengubah ${f.label}`}
+                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2.5 text-left transition-all hover:border-[var(--color-accent)] hover:shadow-sm active:scale-[0.98] ${touched ? 'ring-1 ring-[var(--color-accent)]/40' : ''}`}
+                  >
+                    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${toneIcon}`}>
+                      <f.icon size={13} />
                     </div>
-                  )
-                })}
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-[var(--color-muted)]">{f.label}</p>
+                      <p className={`text-[12px] font-bold ${toneText}`}>
+                        {displayValue}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Inline detail input when "Lain Lain" is selected */}
+            {effValue('monitor') === 'lain' && (
+              <div className="mt-2 flex items-center gap-2 rounded-xl border border-[var(--color-warning-ring)] bg-[var(--color-warning-subtle)] px-3 py-2">
+                <AlertTriangle size={13} className="shrink-0 text-[var(--color-warning)]" />
+                <input
+                  type="text"
+                  value={touched ? condition.monitorDetail : (scooter.deviceCondition?.monitor_detail || '')}
+                  onChange={e => {
+                    setTouched(true)
+                    setCondition(prev => ({ ...prev, monitorDetail: e.target.value }))
+                  }}
+                  placeholder="Ketik jenis error lainnya..."
+                  maxLength={150}
+                  className="w-full rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[12px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-subtle)] focus:border-[var(--color-accent)] transition-all"
+                />
               </div>
             )}
           </div>

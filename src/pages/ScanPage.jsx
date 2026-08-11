@@ -6,11 +6,27 @@ import { showToastNotification, showConfirmDialog } from '../utils/swal'
 import QRScanner from '../components/QRScanner'
 import QRImageUploader from '../components/QRImageUploader'
 
+const SCAN_MODE_KEY = 'scan-mode'
+
+// Persist the last chosen scan method so operators skip the mode picker
+function readLastMode() {
+  try { return localStorage.getItem(SCAN_MODE_KEY) || null } catch { return null }
+}
+
+function writeLastMode(mode) {
+  try { localStorage.setItem(SCAN_MODE_KEY, mode) } catch { /* private mode etc. */ }
+}
+
 export default function ScanPage() {
   const navigate = useNavigate()
-  const [mode, setMode]       = useState(null)    // null | 'camera' | 'image'
+  const [mode, setMode]       = useState(readLastMode)   // null | 'camera' | 'image'
   const [scanning, setScanning] = useState(true)
   const [lastScanned, setLastScanned] = useState({ id: '', time: 0 })
+
+  const chooseMode = useCallback((m) => {
+    writeLastMode(m)
+    setMode(m)
+  }, [])
 
   const showResultNotification = useCallback(async (res) => {
     const isSuccess = res.success
@@ -26,7 +42,7 @@ export default function ScanPage() {
 
     setTimeout(() => {
       setScanning(true)
-    }, 1200)
+    }, 800)
   }, [])
 
   const handleScan = useCallback(async (scooterId) => {
@@ -100,13 +116,13 @@ export default function ScanPage() {
             icon={Camera}
             label="Gunakan Kamera"
             sub="Arahkan kamera ke QR code"
-            onClick={() => setMode('camera')}
+            onClick={() => chooseMode('camera')}
           />
           <ModeBtn
             icon={ImageUp}
             label="Upload dari Galeri"
             sub="Pilih gambar QR dari perangkat"
-            onClick={() => setMode('image')}
+            onClick={() => chooseMode('image')}
           />
         </div>
       )}
