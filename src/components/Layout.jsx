@@ -72,7 +72,7 @@ export default function Layout() {
         <Sidebar onClose={() => setOpen(false)} />
       </aside>
 
-      <div className="flex min-h-full flex-1 flex-col lg:ml-[var(--sidebar-width)]">
+      <div className="flex min-h-full min-w-0 flex-1 flex-col lg:ml-[var(--sidebar-width)]">
         {/* Top Header */}
         <header className="sticky top-0 z-20 flex h-[var(--navbar-height)] items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)]/80 px-4 backdrop-blur-md">
           <div className="flex items-center gap-3">
