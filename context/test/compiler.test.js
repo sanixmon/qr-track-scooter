@@ -122,6 +122,51 @@ describe('Compiler — question & task resolution', () => {
     expect(q.meta.resolved_by).toBe('decision-001')
   })
 
+  it('resolves a cross-topic question via keyword overlap (API bind → api topic)', async () => {
+    const { store, compiler } = makeCompiler()
+    const s1 = await compiler.compile({ sessionId: 'session-001', messages: [
+      { role: 'user', content: 'Apakah API bind di 127.0.0.1 saja?' },
+    ] })
+    expect(s1.open_questions).toHaveLength(1)
+    // nginx matches the deployment category first, so this fact lands on a
+    // different topic than the api question — keyword overlap must bridge it.
+    await compiler.compile({ sessionId: 'session-002', messages: [
+      { role: 'user', content: 'API bind di 127.0.0.1 saja, nginx yang expose ke publik' },
+    ] })
+    const q = store.list({ type: 'question' })[0]
+    expect(q.status).toBe('done')
+    expect(q.meta.resolved_by).toBeTruthy()
+    const answer = store.get(q.meta.resolved_by)
+    expect(answer.content).toContain('127.0.0.1')
+    // the answer itself is a fact (0.6) on topic deployment
+    expect(answer.topic).toBe('deployment')
+  })
+
+  it('does not resolve a question from a low-confidence speculation on a similar topic', async () => {
+    const { store, compiler } = makeCompiler()
+    await compiler.compile({ sessionId: 'session-001', messages: [
+      { role: 'user', content: 'Apakah API bind di 127.0.0.1 saja?' },
+    ] })
+    const s2 = await compiler.compile({ sessionId: 'session-002', messages: [
+      { role: 'user', content: 'Sepertinya API bind di 127.0.0.1 saja' },
+    ] })
+    // speculation is never a valid answer — question stays open
+    expect(store.list({ type: 'question', status: 'active' })).toHaveLength(1)
+    expect(s2.open_questions).toHaveLength(1)
+  })
+
+  it('does not resolve a question from an unrelated statement sharing only one keyword', async () => {
+    const { store, compiler } = makeCompiler()
+    await compiler.compile({ sessionId: 'session-001', messages: [
+      { role: 'user', content: 'Apakah API bind di 127.0.0.1 saja?' },
+    ] })
+    await compiler.compile({ sessionId: 'session-002', messages: [
+      { role: 'user', content: 'Docker volume bind untuk storage' },
+    ] })
+    // topic deployment ≠ api, and only 'bind' overlaps — must stay open
+    expect(store.list({ type: 'question', status: 'active' })).toHaveLength(1)
+  })
+
   it('marks a pending task done when completion is confirmed', async () => {
     const { store, compiler } = makeCompiler()
     const s1 = await compiler.compile({ sessionId: 'session-001', messages: [

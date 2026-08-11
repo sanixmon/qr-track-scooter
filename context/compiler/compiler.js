@@ -200,15 +200,32 @@ export class Compiler {
     return added
   }
 
-  /** Mark open questions resolved when a confident answer exists (this session or already in the store). */
+  /**
+   * Can `cand` plausibly answer question `q`?
+   *  - same topic (single-truth domains resolve naturally), OR
+   *  - strong keyword overlap (≥2 shared significant tokens) for cross-topic
+   *    cases — e.g. “API bind di 127.0.0.1” (topic deployment) answering a
+   *    question on topic api.
+   * Resolving a question is low-stakes (just marks it done), so the confidence
+   * bar (0.5) is lower than for superseding (0.7) — a plain fact (0.6) is a
+   * valid answer.
+   */
+  _answersQuestion(q, cand) {
+    if (!cand || cand.type === 'question' || cand.type === 'speculation') return false
+    if ((cand.confidence ?? 0) < 0.5) return false
+    if (cand.topic === q.topic) return true
+    const qKeys = new Set(q.keywords ?? [])
+    const overlap = (cand.keywords ?? []).filter(k => qKeys.has(k)).length
+    return overlap >= 2
+  }
+
+  /** Mark open questions resolved when a plausible answer exists (this session or already in the store). */
   _resolveQuestions(newKnowledge) {
     const open = this.store.list({ type: 'question', status: 'active' })
     for (const q of open) {
-      const local = newKnowledge.find(
-        k => k.topic === q.topic && k.confidence >= 0.7 && k.type !== 'question' && k.type !== 'speculation',
-      )
+      const local = newKnowledge.find(k => this._answersQuestion(q, k))
       const existing = this.store.list({ status: 'active' }).find(
-        e => e.topic === q.topic && e.confidence >= 0.7 && e.type !== 'question' && e.type !== 'speculation' && e.id !== q.id,
+        e => e.id !== q.id && this._answersQuestion(q, e),
       )
       const answer = local || existing
       if (answer) {
