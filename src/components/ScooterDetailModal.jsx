@@ -59,6 +59,10 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
   const [exporting, setExporting] = useState(false)
   // Snapshot of the last persisted condition — drives the dirty check.
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(condition))
+  // `edited` marks deliberate user actions (dropdown change, "Semua Normal").
+  // Needed because for an unchecked unit the in-memory condition already equals
+  // DEFAULT_CONDITION, so comparing JSON would never register a change.
+  const [edited, setEdited] = useState(false)
 
   // Close on Escape
   useEffect(() => {
@@ -68,9 +72,10 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
   }, [onClose])
 
   // Dirty tracking — any change enables the Save button.
-  const isDirty = JSON.stringify(condition) !== savedSnapshot
+  const isDirty = edited || JSON.stringify(condition) !== savedSnapshot
 
   const setField = (key, value) => {
+    setEdited(true)
     setCondition(prev => ({ ...prev, [key]: value }))
   }
 
@@ -81,6 +86,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     try {
       await saveDeviceCondition(scooter.id, condition)
       setSavedSnapshot(JSON.stringify(condition))
+      setEdited(false)
       await onRefresh()
       showToastNotification({ icon: 'success', title: 'Kondisi perangkat disimpan' })
     } catch (err) {
@@ -92,6 +98,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
 
   const handleMarkAllNormal = () => {
     setCondition({ ...DEFAULT_CONDITION })
+    setEdited(true)
   }
 
   const statusConf = STATUS_CONFIG[scooter.status] || STATUS_CONFIG.available
