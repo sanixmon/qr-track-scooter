@@ -1,8 +1,10 @@
+import { TYPE_LABELS } from '../constants'
+
 /** Type breakdown: SD vs SJ summary cards */
 export default function TypeSummary({ scooters }) {
   const groups = {
-    sd: { label: 'SD (Standar)', available: 0, inUse: 0, rusak: 0, maintenance: 0 },
-    sj: { label: 'SJ (Jumbo)', available: 0, inUse: 0, rusak: 0, maintenance: 0 }
+    sd: { label: TYPE_LABELS.sd, available: 0, inUse: 0, rusak: 0, maintenance: 0 },
+    sj: { label: TYPE_LABELS.sj, available: 0, inUse: 0, rusak: 0, maintenance: 0 }
   }
 
   scooters.forEach(s => {

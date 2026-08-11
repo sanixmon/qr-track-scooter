@@ -5,80 +5,108 @@ Sistem manajemen inventaris, penyewaan, dan pelacakan unit scooter secara real-t
 ## ✨ Fitur Utama
 
 - **📊 Dasbor Pemantauan Real-Time:**
-  - Ringkasan statistik cepat (Unit Tersedia, Disewakan, Total Unit, dan Aktivitas Hari Ini).
-  - Kisi status unit (*Scooter Grid*) dengan filter status dan jenis.
-  - Ringkasan distribusi unit per jenis (SD - Dewasa & SJ - Jumbo) beserta jumlah unit aktif/dirawat.
+  - Ringkasan statistik cepat (Online, Offline/Rusak, Maintenance, Total Unit).
+  - Kisi status unit (*Scooter Grid*) dengan filter status dan jenis — klik unit untuk membuka **detail modal**.
+  - Ringkasan distribusi unit per jenis (SD - Standar & SJ - Jumbo).
   - Panel alur aktivitas terbaru (*Live Feed*) dengan penanda waktu relatif.
 
+- **🔍 Detail Unit (Modal):**
+  - **Kondisi Perangkat** per unit: Spakbor, Lampu, Baterai, Jenis Error (E2/E4/E16/E6/Lain), Rem, Ban (Botak/Tipis/Aman) — dengan status "Belum dicek" jika belum pernah disimpan.
+  - **Edit kondisi** langsung dari modal; menyimpan Jenis Error otomatis menandai unit **Rusak**, dan menormalkannya mengembalikan unit ke Tersedia.
+  - Riwayat unit + riwayat maintenance, dengan **Export Excel** (.xlsx, 2 sheet).
+
 - **📜 Tabel Riwayat Aktivitas Lengkap:**
-  - Menyimpan histori transaksi penyewaan (masuk/keluar).
-  - Dilengkapi fitur pencarian ID unit dan penyaringan aksi.
-  - Dilengkapi fitur **paginasi** (pagination) untuk kemudahan navigasi log yang panjang.
+  - Histori transaksi penyewaan (masuk/keluar) dengan pencarian ID, penyaringan aksi, dan paginasi.
 
 - **📸 Pemindai QR Code Pintar:**
-  - Pemindaian langsung menggunakan kamera perangkat (*environment facing camera*).
-  - Pilihan pemindaian melalui unggah file gambar QR code dari galeri.
-  - Alternatif input ID unit secara manual jika kamera tidak tersedia.
+  - Pemindaian kamera (*environment facing*), unggah gambar QR, atau input ID manual.
+  - Unit berstatus *maintenance* / *rusak* memerlukan konfirmasi sebelum disewakan.
 
-- **🛠️ Manajemen Unit Terintegrasi:**
-  - Input unit baru dengan opsi kustomisasi ID (untuk stok tidak berurutan) atau penomoran otomatis (*auto-generate*).
-  - Dropdown pengubah status unit langsung (Tersedia ↔ Maintenance) dari tabel inventaris.
-  - Fitur unduh QR code unit dalam format PNG secara instan.
+- **🛠️ Manajemen Unit & Maintenance:**
+  - Tambah unit (ID kustom atau auto-generate), ubah status, unduh QR per unit / semua unit (ZIP).
+  - Status **Maintenance** mencatat lokasi (Di Outlet / Keluar) + kendala, dan menghasilkan catatan perbaikan yang bisa ditandai **Selesai** dari dashboard.
+  - **Backup database** (file `.db`) dengan retention otomatis (10 backup terakhir).
 
-- **⚠️ Proteksi Unit Maintenance:**
-  - Fitur **Catatan Perbaikan** opsional ketika unit diletakkan ke status *Maintenance* (contoh: "Ganti ban", "Rem blong").
-  - Menampilkan catatan perbaikan langsung pada kartu unit di dasbor dan tabel inventaris.
-  - **Peringatan Pemindaian:** Jika unit berstatus *maintenance* dipindai untuk disewa, sistem akan menampilkan konfirmasi peringatan beserta catatan perbaikan sebelum menyewakan unit.
-
-- **🔄 Sinkronisasi & Ekspor Data:**
-  - Ekspor seluruh data (unit scooter & log aktivitas) ke file format JSON.
-  - Sinkronisasi instan antar-tab browser menggunakan `storage` event handler.
+- **📊 Laporan & Ekspor:**
+  - **Export Kondisi Unit** (.xlsx) untuk seluruh armada.
+  - **Laporan Harian** (.xlsx) per tanggal dari tab Monitor (laporan per-sesi sewa).
+  - **Export JSON** seluruh data dari sidebar.
 
 ## 🛠️ Teknologi yang Digunakan
 
-- **Core:** React 19 + Vite 8
-- **Styling:** Tailwind CSS v4 (menggunakan plugin `@tailwindcss/vite` & `@theme` tokens)
-- **Icons:** Lucide React
-- **QR Engine:**
-  - `html5-qrcode` (untuk decode QR melalui kamera/gambar)
-  - `qrcode` (untuk generate QR Code sebagai file PNG)
-- **Helper:** `date-fns` (untuk format tanggal & penanda waktu relatif)
+- **Frontend:** React 19 + Vite 8, Tailwind CSS v4, Lucide React, SweetAlert2, date-fns
+- **QR Engine:** `html5-qrcode` (decode) & `qrcode` (generate)
+- **Backend:** Express 5 + better-sqlite3 (SQLite, WAL mode), PM2 (ecosystem.config.cjs)
+- **Excel:** SheetJS `xlsx` 0.20.x (via CDN resmi — versi npm 0.18.5 punya CVE)
+- **Deploy:** nginx reverse proxy + HTTPS (lihat bagian Produksi)
 
 ## 🚀 Cara Menjalankan Proyek
 
 ### 1. Prasyarat
-Pastikan Anda memiliki **Node.js** dan package manager **pnpm** (atau npm/yarn) terinstal pada mesin lokal Anda.
+**Node.js** (v20+) dan **pnpm**.
 
 ### 2. Instalasi Dependensi
-Jalankan perintah berikut untuk menginstal seluruh dependensi proyek:
 ```bash
 pnpm install
 ```
 
-### 3. Menjalankan Server Pengembangan
-Jalankan server lokal untuk pengembangan dengan fitur hot reload:
+### 3. Menjalankan Server Pengembangan (Frontend + API)
 ```bash
-pnpm dev
+pnpm dev:all
 ```
-Aplikasi akan dapat diakses secara default melalui URL `http://localhost:5173/`.
+- Frontend Vite: `http://localhost:5173/` (proxy `/api` → `localhost:3005`)
+- Atau jalankan terpisah: `pnpm dev` (frontend) dan `pnpm dev:server` (API)
 
 ### 4. Build untuk Produksi
-Guna mengompilasi dan mengoptimalkan aplikasi untuk kebutuhan produksi:
 ```bash
 pnpm build
 ```
-Hasil kompilasi akan berada di dalam direktori `dist/` dan siap di-deploy ke server statis.
+Hasil di `dist/` — siap di-serve oleh nginx (lihat bagian Produksi).
+
+### 5. Test & Lint
+```bash
+pnpm test      # Vitest (104 test: API + storage + komponen)
+pnpm lint      # ESLint
+```
 
 ## 📁 Struktur Folder Proyek
 
 ```text
-src/
-├── assets/         # Aset statis seperti gambar & logo
-├── components/     # Komponen UI modular (Navbar, Card, Scanner, dll.)
-├── hooks/          # React custom hooks (useScooterData)
-├── pages/          # Halaman aplikasi (Dashboard, Scan, Manage)
-├── App.jsx         # Routing & Layouting aplikasi
-├── index.css       # Desain global & Token Custom Property Tailwind v4
-├── main.jsx        # Entry point aplikasi
-└── storage.js      # Manajemen localStorage CRUD & logika bisnis
+├── src/
+│   ├── components/      # Komponen UI (ScooterCard, ScooterDetailModal, dll.)
+│   ├── pages/           # Halaman (Dashboard, Scan, Manage, Monitor)
+│   ├── hooks/           # useScooterData (fetch + polling realtime 30s)
+│   ├── constants.js     # Sumber tunggal status/jenis/device condition
+│   ├── storage.js       # API client (satu-satunya gerbang ke backend)
+│   ├── App.jsx          # Routing & Layouting
+│   └── main.jsx         # Entry point
+├── server/
+│   ├── server.js        # Express API (port 3005, bind 127.0.0.1)
+│   ├── db.js            # Schema SQLite + migrasi idempoten
+│   ├── backup.js        # Backup DB + retention
+│   └── trackscooter.db  # Database (gitignored)
+├── ecosystem.config.cjs # PM2
+└── .github/workflows/   # (deploy.yml.disabled — nonaktif, lihat Produksi)
 ```
+
+## ☁️ Produksi
+
+Arsitektur produksi **same-origin** — nginx yang menangani semuanya:
+
+```text
+Browser ──▶ https://qr.evrenhouse.online  (nginx, HTTPS via Certbot)
+                ├── /        → serve dist/ (frontend)
+                └── /api/*   → proxy ke 127.0.0.1:3005 (Express + SQLite)
+```
+
+- **API bind `127.0.0.1`** — tidak terekspos langsung; hanya lewat nginx.
+- **CORS allowlist** di `server/server.js` (same-origin request tanpa Origin header selalu diizinkan).
+- **PM2:** `npx pm2 start ecosystem.config.cjs` → app `trackscooter-api`.
+- **Migrasi DB otomatis** saat server start (idempoten, aman untuk data lama).
+- Workflow GitHub Pages **dinonaktifkan** (`.disabled`) karena Pages tidak bisa menjalankan API; frontend di-serve dari host yang sama dengan API.
+
+## 🧪 Catatan Pengembangan
+
+- Status unit: `available` (Tersedia) · `in-use` (Online) · `rusak` (Offline/Rusak) · `maintenance`.
+- Definisikan label/warna status & device di `src/constants.js` — jangan hardcode di komponen.
+- `VITE_API_URL` boleh kosong (same-origin via nginx); build produksi menolak nilai `localhost`.

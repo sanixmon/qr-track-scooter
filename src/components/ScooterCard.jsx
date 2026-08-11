@@ -1,5 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import LiveTimer from './LiveTimer'
+import { STATUS_LABELS, TYPE_LABELS } from '../constants'
+import { buildIssueList } from '../utils/deviceCondition'
 
 export default function ScooterCard({ scooter, onClick }) {
   const status = scooter.status
@@ -11,28 +13,24 @@ export default function ScooterCard({ scooter, onClick }) {
       stripBg: 'bg-[var(--color-green)]',
       dotBg: 'bg-[var(--color-green)]',
       textClass: 'text-[var(--color-green)]',
-      labelText: 'Tersedia',
     },
     'in-use': {
       hoverBorder: 'hover:border-[var(--color-accent-ring)]',
       stripBg: 'bg-[var(--color-accent)]',
       dotBg: 'bg-[var(--color-accent)] dot-pulse',
       textClass: 'text-[var(--color-accent)]',
-      labelText: 'Online',
     },
     rusak: {
       hoverBorder: 'hover:border-[var(--color-red-ring)]',
       stripBg: 'bg-[var(--color-red)]',
       dotBg: 'bg-[var(--color-red)]',
       textClass: 'text-[var(--color-red)]',
-      labelText: 'Offline / Rusak',
     },
     maintenance: {
       hoverBorder: 'hover:border-[var(--color-warning-ring)]',
       stripBg: 'bg-[var(--color-warning)]',
       dotBg: 'bg-[var(--color-warning)]',
       textClass: 'text-[var(--color-warning)]',
-      labelText: 'Maintenance',
     }
   }
 
@@ -60,7 +58,7 @@ export default function ScooterCard({ scooter, onClick }) {
             {scooter.id}
           </p>
           <p className="text-[11px] text-[var(--color-muted)] font-medium">
-            {scooter.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'}
+            {TYPE_LABELS[scooter.type] || scooter.type}
           </p>
         </div>
         {onClick ? (
@@ -84,7 +82,7 @@ export default function ScooterCard({ scooter, onClick }) {
       <div className="flex items-center gap-2 pl-2">
         <span className={`h-2 w-2 rounded-full shrink-0 ${config.dotBg}`} />
         <span className={`text-[12px] font-medium ${config.textClass}`}>
-          {config.labelText}
+          {STATUS_LABELS[status] || status}
         </span>
       </div>
 
@@ -113,28 +111,20 @@ export default function ScooterCard({ scooter, onClick }) {
 
 /** Tiny row of bad/warn device components, e.g. "Baterai drop" */
 function DeviceAlert({ condition }) {
-  const bad = []
-  const warn = []
-  if (condition.baterai === 'drop') bad.push('Baterai drop')
-  if (condition.lampu === 'tidak') bad.push('Lampu tidak nyala')
-  if (condition.monitor && condition.monitor === 'lain' && condition.monitor_detail) bad.push(condition.monitor_detail)
-  else if (condition.monitor && condition.monitor !== 'normal') bad.push(`Error ${condition.monitor.toUpperCase()}`)
-  if (condition.rem === 'rusak') bad.push('Rem rusak')
-  if (condition.ban === 'botak') bad.push('Ban botak')
-  if (condition.ban === 'tipis') warn.push('Ban tipis')
-  if (condition.setelan === 'tidak') bad.push('Spakbor tidak ada')
-
-  if (bad.length === 0 && warn.length === 0) return null
+  const issues = buildIssueList(condition)
+  if (issues.length === 0) return null
   return (
     <div className="flex flex-wrap gap-1">
-      {bad.map(b => (
-        <span key={b} className="rounded bg-[var(--color-red-subtle)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--color-red)]">
-          {b}
-        </span>
-      ))}
-      {warn.map(w => (
-        <span key={w} className="rounded bg-[var(--color-warning-subtle)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--color-warning)]">
-          {w}
+      {issues.map(issue => (
+        <span
+          key={issue.text}
+          className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+            issue.tone === 'warn'
+              ? 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)]'
+              : 'bg-[var(--color-red-subtle)] text-[var(--color-red)]'
+          }`}
+        >
+          {issue.text}
         </span>
       ))}
     </div>

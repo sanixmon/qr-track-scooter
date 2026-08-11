@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getScooters, getActivityLog, getMaintenanceRecords } from '../storage'
 
+const POLL_INTERVAL_MS = 30_000 // silent refresh every 30s
+
 export function useScooterData() {
   const [scooters,    setScooters]    = useState([])
   const [activityLog, setActivityLog] = useState([])
@@ -24,6 +26,8 @@ export function useScooterData() {
         if (mountedRef.current) {
           setError(err.message || 'Gagal membaca data.')
         }
+      } finally {
+        if (mountedRef.current) setLoading(false)
       }
     }
     load()
@@ -31,18 +35,18 @@ export function useScooterData() {
 
   useEffect(() => {
     mountedRef.current = true
-    getScooters()
-      .then(s => { if (mountedRef.current) setScooters(s) })
-      .catch(err => { if (mountedRef.current) setError(err.message || 'Gagal membaca data.') })
-    getActivityLog()
-      .then(l => { if (mountedRef.current) setActivityLog(l) })
-      .catch(() => {})
-    getMaintenanceRecords()
-      .then(m => { if (mountedRef.current) setMaintenanceRecords(m) })
-      .catch(() => {})
-      .finally(() => { if (mountedRef.current) setLoading(false) })
-    return () => { mountedRef.current = false }
-  }, [])
+    // Initial load — same code path as refresh(), no duplicated logic.
+    refresh()
+
+    // Silent background polling keeps the dashboard "real-time" without
+    // requiring a manual refresh after every action elsewhere.
+    const interval = setInterval(refresh, POLL_INTERVAL_MS)
+
+    return () => {
+      mountedRef.current = false
+      clearInterval(interval)
+    }
+  }, [refresh])
 
   return { scooters, activityLog, maintenanceRecords, loading, error, refresh }
 }

@@ -8,34 +8,23 @@ import { showToastNotification, showErrorAlert, showConfirmDialog } from '../uti
 import LiveTimer from './LiveTimer'
 import { format } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
+import { DEVICE_FIELDS, STATUS_LABELS } from '../constants'
+import { fieldTone } from '../utils/deviceCondition'
 
-// ── Device condition config ─────────────────────────────────
-const DEVICE_FIELDS = [
-  { key: 'setelan',  label: 'Spakbor',     icon: Settings2,     options: [['ada', 'Ada'], ['tidak', 'Tidak']] },
-  { key: 'lampu',    label: 'Lampu',       icon: Lightbulb,     options: [['nyala', 'Nyala'], ['tidak', 'Tidak']] },
-  { key: 'baterai',  label: 'Baterai',     icon: Battery,       options: [['normal', 'Normal'], ['drop', 'Drop']] },
-  { key: 'monitor',  label: 'Jenis Error', icon: AlertTriangle, options: [['normal', 'Normal'], ['e2', 'E2'], ['e4', 'E4'], ['e16', 'E16'], ['e6', 'E6'], ['lain', 'Lain Lain']] },
-  { key: 'rem',      label: 'Rem',         icon: Disc3,         options: [['normal', 'Normal'], ['rusak', 'Rusak']] },
-  { key: 'ban',      label: 'Ban',         icon: CircleDot,     options: [['botak', 'Botak'], ['tipis', 'Tipis'], ['aman', 'Aman']] },
-]
+// Add per-field icons to the shared field definitions (icons are UI-only)
+const DEVICE_FIELDS_WITH_ICONS = DEVICE_FIELDS.map(f => ({
+  ...f,
+  icon: {
+    setelan: Settings2, lampu: Lightbulb, baterai: Battery, monitor: AlertTriangle,
+    rem: Disc3, ban: CircleDot,
+  }[f.key] || Settings2,
+}))
 
 const STATUS_CONFIG = {
-  available:   { dot: 'bg-[var(--color-green)]',    text: 'text-[var(--color-green)]',    label: 'Tersedia' },
-  'in-use':    { dot: 'bg-[var(--color-accent)]',   text: 'text-[var(--color-accent)]',   label: 'Online' },
-  rusak:       { dot: 'bg-[var(--color-red)]',      text: 'text-[var(--color-red)]',      label: 'Offline / Rusak' },
-  maintenance: { dot: 'bg-[var(--color-warning)]',  text: 'text-[var(--color-warning)]',  label: 'Maintenance' },
-}
-
-function isBadField(key, value) {
-  if (!value) return true
-  const bad = { setelan: 'tidak', lampu: 'tidak', baterai: 'drop', monitor: 'e2', rem: 'rusak', ban: 'botak' }
-  return value === bad[key] || (key === 'monitor' && value !== 'normal')
-}
-
-// Warning-tier fields (yellow) — e.g. tire tread is thin but still usable
-function isWarnField(key, value) {
-  if (!value) return false
-  return key === 'ban' && value === 'tipis'
+  available:   { dot: 'bg-[var(--color-green)]',    text: 'text-[var(--color-green)]' },
+  'in-use':    { dot: 'bg-[var(--color-accent)]',   text: 'text-[var(--color-accent)]' },
+  rusak:       { dot: 'bg-[var(--color-red)]',      text: 'text-[var(--color-red)]' },
+  maintenance: { dot: 'bg-[var(--color-warning)]',  text: 'text-[var(--color-warning)]' },
 }
 
 function fmtDate(ts) {
@@ -136,10 +125,9 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
               <p className="text-[11px] text-[var(--color-muted)]">
                 {scooter.type === 'sd' ? 'Standar (SD)' : 'Jumbo (SJ)'}
               </p>
-            </div>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusConf.text} bg-[var(--color-surface-3)]`}>
+            </div>              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusConf.text} bg-[var(--color-surface-3)]`}>
               <span className={`h-1.5 w-1.5 rounded-full ${statusConf.dot} ${scooter.status === 'in-use' ? 'dot-pulse' : ''}`} />
-              {statusConf.label}
+              {STATUS_LABELS[scooter.status] || scooter.status}
             </span>
           </div>
           <button
@@ -179,7 +167,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
 
             {editing ? (
               <div className="space-y-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3.5">
-                {DEVICE_FIELDS.map(f => (
+                {DEVICE_FIELDS_WITH_ICONS.map(f => (
                   <div key={f.key} className="flex items-center justify-between gap-3">
                     <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--color-muted)]">
                       <f.icon size={13} className="text-[var(--color-subtle)]" />
@@ -218,14 +206,12 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                {DEVICE_FIELDS.map(f => {
+                {DEVICE_FIELDS_WITH_ICONS.map(f => {
                   // Read directly from saved data — no default fallback,
                   // so units never checked show as "Belum dicek"
                   const value = scooter.deviceCondition?.[f.key]
                   const checked = scooter.deviceCondition != null
-                  const bad = value ? isBadField(f.key, value) : false
-                  const warn = value ? isWarnField(f.key, value) : false
-                  const tone = !checked ? 'none' : bad ? 'bad' : warn ? 'warn' : 'good'
+                  const tone = fieldTone(f.key, value, checked)
                   const displayValue = (f.key === 'monitor' && value === 'lain' && scooter.deviceCondition?.monitor_detail)
                     ? scooter.deviceCondition.monitor_detail
                     : (f.options.find(([v]) => v === value)?.[1] || 'Belum dicek')

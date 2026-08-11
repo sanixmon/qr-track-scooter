@@ -1,3 +1,5 @@
+import { DEVICE_LABELS, TYPE_LABELS, STATUS_LABELS } from './constants'
+
 const API = import.meta.env.VITE_API_URL || ''
 
 async function api(path, options = {}) {
@@ -387,26 +389,6 @@ export async function exportScooterHistoryToExcel(scooter, logEntries, maintenan
 }
 
 // ── Excel Export (all units condition snapshot) ─────────────
-const DEVICE_LABELS = {
-  setelan: { ada: 'Ada', tidak: 'Tidak ada' },
-  lampu: { nyala: 'Nyala', tidak: 'Tidak nyala' },
-  baterai: { normal: 'Normal', drop: 'Drop' },
-  monitor: {
-    normal: 'Normal', e2: 'E2', e4: 'E4', e16: 'E16', e6: 'E6', lain: 'Lain-lain'
-  },
-  rem: { normal: 'Normal', rusak: 'Rusak' },
-  ban: { aman: 'Aman', tipis: 'Tipis', botak: 'Botak' },
-}
-
-const TYPE_LABELS = { sd: 'Standar (SD)', sj: 'Jumbo (SJ)' }
-
-const STATUS_LABELS = {
-  available: 'Tersedia',
-  'in-use': 'Online',
-  rusak: 'Offline / Rusak',
-  maintenance: 'Maintenance',
-}
-
 export async function exportScooterConditionsToExcel(scooters) {
   if (!scooters || scooters.length === 0) {
     throw new Error('Belum ada scooter untuk diekspor.')
