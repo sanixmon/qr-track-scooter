@@ -116,8 +116,9 @@ function DeviceAlert({ condition }) {
   const bad = []
   const warn = []
   if (condition.baterai === 'drop') bad.push('Baterai drop')
-  if (condition.lampu === 'redup') bad.push('Lampu redup')
-  if (condition.monitor && condition.monitor !== 'normal') bad.push(`Error ${condition.monitor.toUpperCase()}`)
+  if (condition.lampu === 'tidak') bad.push('Lampu tidak nyala')
+  if (condition.monitor && condition.monitor === 'lain' && condition.monitor_detail) bad.push(condition.monitor_detail)
+  else if (condition.monitor && condition.monitor !== 'normal') bad.push(`Error ${condition.monitor.toUpperCase()}`)
   if (condition.rem === 'rusak') bad.push('Rem rusak')
   if (condition.ban === 'botak') bad.push('Ban botak')
   if (condition.ban === 'tipis') warn.push('Ban tipis')

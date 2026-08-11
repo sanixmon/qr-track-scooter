@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
-import { ShieldAlert, ArrowUpRight, ArrowDownLeft, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, BarChart2, Filter } from 'lucide-react'
+import { ShieldAlert, ArrowUpRight, ArrowDownLeft, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, BarChart2, Filter, FileSpreadsheet } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
 import { formatDistanceToNow, format, isSameDay, startOfDay, parseISO, isToday } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import LiveTimer from '../components/LiveTimer'
+import { exportDailyReportToExcel } from '../storage'
+import { showErrorAlert, showToastNotification } from '../utils/swal'
 
 // ── Helper: parse timestamp safely ────────────────────────
 function parseDate(ts) {
@@ -15,6 +17,7 @@ export default function MonitorPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter]     = useState('all')
   const [showStatusPanel, setShowStatusPanel] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // ── Date history state ────────────────────────────────
   // selectedDate = Date object or null (null = "Hari Ini" live view)
@@ -81,6 +84,18 @@ export default function MonitorPage() {
       setSelectedDate(availableDates[currentDateIdx - 1])
     } else {
       setSelectedDate(null) // back to today / live
+    }
+  }
+
+  const handleExportReport = async () => {
+    try {
+      setExporting(true)
+      await exportDailyReportToExcel(activeDate, activityLog, scooters)
+      showToastNotification({ icon: 'success', title: 'Laporan Excel diunduh' })
+    } catch (err) {
+      showErrorAlert('Gagal Unduh Laporan', err.message)
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -212,6 +227,20 @@ export default function MonitorPage() {
           className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <ChevronRight size={15} />
+        </button>
+
+        {/* Export daily report (Excel) */}
+        <button
+          onClick={handleExportReport}
+          disabled={exporting}
+          className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 py-2 text-[11px] font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {exporting ? (
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          ) : (
+            <FileSpreadsheet size={13} />
+          )}
+          {exporting ? 'Membuat...' : 'Excel'}
         </button>
       </div>
 

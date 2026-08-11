@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database, FolderArchive } from 'lucide-react'
+import { Plus, Download, Trash2, Search, Bike, AlertCircle, ShieldAlert, Database, FolderArchive, FileSpreadsheet } from 'lucide-react'
 import { useScooterData } from '../hooks/useScooterData'
-import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadAllScooterQRs, downloadDatabaseBackup } from '../storage'
+import { addScooter, deleteScooter, updateScooter, downloadScooterQR, downloadAllScooterQRs, downloadDatabaseBackup, exportScooterConditionsToExcel } from '../storage'
 import { showConfirmDialog, showPromptDialog, showMaintenanceDialog, showErrorAlert, showToastNotification } from '../utils/swal'
 
 export default function ManagePage() {
@@ -17,6 +17,19 @@ export default function ManagePage() {
   const [submitting, setSubmitting] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
   const [zippingAll, setZippingAll] = useState(false)
+  const [exportingXls, setExportingXls] = useState(false)
+
+  const handleExportXls = async () => {
+    try {
+      setExportingXls(true)
+      await exportScooterConditionsToExcel(scooters)
+      showToastNotification({ icon: 'success', title: 'File XLS berhasil diunduh' })
+    } catch (err) {
+      showErrorAlert('Gagal Export', err.message)
+    } finally {
+      setExportingXls(false)
+    }
+  }
 
   const handleBackup = async () => {
     try {
@@ -186,6 +199,23 @@ export default function ManagePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExportXls}
+            disabled={exportingXls || scooters.length === 0}
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-[12px] font-semibold text-[var(--color-text)] shadow-sm transition-all hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {exportingXls ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
+                Mengexport...
+              </>
+            ) : (
+              <>
+                <FileSpreadsheet size={15} className="text-[var(--color-accent)]" />
+                Export Kondisi Unit
+              </>
+            )}
+          </button>
           <button
             onClick={handleDownloadAllQR}
             disabled={zippingAll || scooters.length === 0}

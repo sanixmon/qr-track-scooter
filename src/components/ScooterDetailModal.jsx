@@ -12,9 +12,9 @@ import { id as localeId } from 'date-fns/locale'
 // ── Device condition config ─────────────────────────────────
 const DEVICE_FIELDS = [
   { key: 'setelan',  label: 'Spakbor',     icon: Settings2,     options: [['ada', 'Ada'], ['tidak', 'Tidak']] },
-  { key: 'lampu',    label: 'Lampu',       icon: Lightbulb,     options: [['nyala', 'Nyala'], ['redup', 'Redup']] },
+  { key: 'lampu',    label: 'Lampu',       icon: Lightbulb,     options: [['nyala', 'Nyala'], ['tidak', 'Tidak']] },
   { key: 'baterai',  label: 'Baterai',     icon: Battery,       options: [['normal', 'Normal'], ['drop', 'Drop']] },
-  { key: 'monitor',  label: 'Jenis Error', icon: AlertTriangle, options: [['normal', 'Normal'], ['e2', 'E2'], ['e4', 'E4'], ['e16', 'E16'], ['e6', 'E6']] },
+  { key: 'monitor',  label: 'Jenis Error', icon: AlertTriangle, options: [['normal', 'Normal'], ['e2', 'E2'], ['e4', 'E4'], ['e16', 'E16'], ['e6', 'E6'], ['lain', 'Lain Lain']] },
   { key: 'rem',      label: 'Rem',         icon: Disc3,         options: [['normal', 'Normal'], ['rusak', 'Rusak']] },
   { key: 'ban',      label: 'Ban',         icon: CircleDot,     options: [['botak', 'Botak'], ['tipis', 'Tipis'], ['aman', 'Aman']] },
 ]
@@ -28,7 +28,7 @@ const STATUS_CONFIG = {
 
 function isBadField(key, value) {
   if (!value) return true
-  const bad = { setelan: 'tidak', lampu: 'redup', baterai: 'drop', monitor: 'e2', rem: 'rusak', ban: 'botak' }
+  const bad = { setelan: 'tidak', lampu: 'tidak', baterai: 'drop', monitor: 'e2', rem: 'rusak', ban: 'botak' }
   return value === bad[key] || (key === 'monitor' && value !== 'normal')
 }
 
@@ -54,6 +54,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
     monitor: scooter.deviceCondition?.monitor ?? 'normal',
     rem: scooter.deviceCondition?.rem ?? 'normal',
     ban: scooter.deviceCondition?.ban ?? 'aman',
+    monitorDetail: scooter.deviceCondition?.monitor_detail ?? '',
   }))
 
   // Close on Escape
@@ -184,15 +185,26 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                       <f.icon size={13} className="text-[var(--color-subtle)]" />
                       {f.label}
                     </label>
-                    <select
-                      value={condition[f.key] || ''}
-                      onChange={e => setCondition({ ...condition, [f.key]: e.target.value })}
-                      className="w-36 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] cursor-pointer transition-all"
-                    >
-                      {f.options.map(([val, lbl]) => (
-                        <option key={val} value={val}>{lbl}</option>
-                      ))}
-                    </select>
+                    {f.key === 'monitor' && condition.monitor === 'lain' ? (
+                      <input
+                        type="text"
+                        value={condition.monitorDetail || ''}
+                        onChange={e => setCondition({ ...condition, monitorDetail: e.target.value })}
+                        placeholder="Ketik manual jenis lainnya..."
+                        maxLength={150}
+                        className="w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] transition-all"
+                      />
+                    ) : (
+                      <select
+                        value={condition[f.key] || ''}
+                        onChange={e => setCondition({ ...condition, [f.key]: e.target.value })}
+                        className="w-36 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2.5 py-1.5 text-[12px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] cursor-pointer transition-all"
+                      >
+                        {f.options.map(([val, lbl]) => (
+                          <option key={val} value={val}>{lbl}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 ))}
                 <button
@@ -214,6 +226,9 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                   const bad = value ? isBadField(f.key, value) : false
                   const warn = value ? isWarnField(f.key, value) : false
                   const tone = !checked ? 'none' : bad ? 'bad' : warn ? 'warn' : 'good'
+                  const displayValue = (f.key === 'monitor' && value === 'lain' && scooter.deviceCondition?.monitor_detail)
+                    ? scooter.deviceCondition.monitor_detail
+                    : (f.options.find(([v]) => v === value)?.[1] || 'Belum dicek')
                   const toneIcon = {
                     none: 'bg-[var(--color-surface-3)] text-[var(--color-subtle)]',
                     bad:  'bg-[var(--color-red-subtle)] text-[var(--color-red)]',
@@ -234,7 +249,7 @@ export default function ScooterDetailModal({ scooter, activityLog, maintenanceRe
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--color-muted)]">{f.label}</p>
                         <p className={`text-[12px] font-bold ${toneText}`}>
-                          {f.options.find(([v]) => v === value)?.[1] || 'Belum dicek'}
+                          {displayValue}
                         </p>
                       </div>
                     </div>

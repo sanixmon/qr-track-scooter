@@ -75,11 +75,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS device_conditions (
     scooter_id TEXT PRIMARY KEY REFERENCES scooters(id) ON DELETE CASCADE,
     setelan TEXT CHECK(setelan IN ('ada', 'tidak')),
-    lampu TEXT CHECK(lampu IN ('nyala', 'redup')),
+    lampu TEXT CHECK(lampu IN ('nyala', 'tidak')),
     baterai TEXT CHECK(baterai IN ('normal', 'drop')),
-    monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6')),
+    monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6', 'lain')),
     rem TEXT CHECK(rem IN ('normal', 'rusak')),
     ban TEXT CHECK(ban IN ('botak', 'tipis', 'aman')),
+    monitor_detail TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -140,6 +141,49 @@ export function migrateBanOptions(dbInstance) {
 }
 
 migrateBanOptions(db)
+
+/**
+ * Migrate device_conditions so lampu accepts ('nyala', 'tidak') instead of
+ * ('nyala', 'redup') and monitor accepts a free-form "lain" option backed by a
+ * new monitor_detail text column.
+ */
+export function migrateDeviceOptions(dbInstance) {
+  try {
+    const table = dbInstance.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'device_conditions'"
+    ).get()
+
+    if (!table || !table.sql) return
+    if (table.sql.includes("'lain'") && table.sql.toLowerCase().includes('monitor_detail')) return // already migrated
+
+    dbInstance.exec(`
+      BEGIN;
+      CREATE TABLE device_conditions_new (
+        scooter_id TEXT PRIMARY KEY REFERENCES scooters(id) ON DELETE CASCADE,
+        setelan TEXT CHECK(setelan IN ('ada', 'tidak')),
+        lampu TEXT CHECK(lampu IN ('nyala', 'tidak')),
+        baterai TEXT CHECK(baterai IN ('normal', 'drop')),
+        monitor TEXT CHECK(monitor IN ('normal', 'e2', 'e4', 'e16', 'e6', 'lain')),
+        rem TEXT CHECK(rem IN ('normal', 'rusak')),
+        ban TEXT CHECK(ban IN ('botak', 'tipis', 'aman')),
+        monitor_detail TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO device_conditions_new (scooter_id, setelan, lampu, baterai, monitor, rem, ban, monitor_detail, updated_at)
+        SELECT scooter_id, setelan,
+        CASE lampu WHEN 'redup' THEN 'tidak' ELSE lampu END,
+        baterai, monitor, rem, ban, NULL, updated_at
+        FROM device_conditions;
+      DROP TABLE device_conditions;
+      ALTER TABLE device_conditions_new RENAME TO device_conditions;
+      COMMIT;
+    `)
+  } catch (err) {
+    console.error('Migration error (device options):', err)
+  }
+}
+
+migrateDeviceOptions(db)
 
 export function migrateUnpaddedIds(dbInstance) {
   try {

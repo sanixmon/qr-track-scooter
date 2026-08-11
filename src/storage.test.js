@@ -4,7 +4,8 @@ import {
   addScooter,
   updateScooter,
   getActivityLog,
-  toggleScooterStatus
+  toggleScooterStatus,
+  buildDailyReportRows
 } from './storage'
 
 // ── In-memory store mimicking the SQLite backend ────────────
@@ -98,13 +99,19 @@ function apiHandler(method, path, body) {
         return { ok: false, status: 404, body: { error: `Scooter "${id}" tidak ditemukan.` } }
       }
       const dc = { ...body, updated_at: new Date().toISOString() }
+      if ('monitorDetail' in dc) {
+        dc.monitor_detail = dc.monitorDetail
+        delete dc.monitorDetail
+      }
       store.deviceConditions[id] = dc
       // Auto status: Jenis Error → rusak, normal → tersedia (mirror server)
       const isError = dc.monitor !== null && dc.monitor !== undefined && dc.monitor !== 'normal'
       if (isError) {
         if (scooter.status === 'available') {
           scooter.status = 'rusak'
-          scooter.maintenance_note = `Error ${dc.monitor.toUpperCase()}`
+          scooter.maintenance_note = dc.monitor === 'lain'
+            ? (dc.monitor_detail || 'Lain-lain')
+            : `Error ${dc.monitor.toUpperCase()}`
         }
       } else if (scooter.status === 'rusak') {
         scooter.status = 'available'
@@ -345,7 +352,7 @@ describe('Device condition', () => {
     await addScooter({ id: 'SD-300', type: 'sd' })
 
     const dc = await saveDeviceCondition('SD-300', {
-      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
+      setelan: 'ada', lampu: 'tidak', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
     })
     expect(dc.baterai).toBe('drop')
     expect(dc.monitor).toBe('e4')
@@ -365,6 +372,21 @@ describe('Device condition', () => {
     const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-301'))
     expect(scooter.status).toBe('rusak')
     expect(scooter.maintenanceNote).toBe('Error E2')
+  })
+
+  it('supports "Lain Lain" option with manual detail text', async () => {
+    const { saveDeviceCondition, getScooters } = await import('./storage')
+    await addScooter({ id: 'SD-303', type: 'sd' })
+
+    await saveDeviceCondition('SD-303', {
+      setelan: 'ada', lampu: 'tidak', baterai: 'normal', monitor: 'lain',
+      monitorDetail: 'Spakbor retak', rem: 'normal', ban: 'aman'
+    })
+    const [scooter] = await getScooters().then(bikes => bikes.filter(b => b.id === 'SD-303'))
+    expect(scooter.deviceCondition.monitor).toBe('lain')
+    expect(scooter.monitorDetail).toBe('Spakbor retak')
+    expect(scooter.status).toBe('rusak')
+    expect(scooter.maintenanceNote).toBe('Spakbor retak')
   })
 
   it('auto-restores rusak scooter when Jenis Error is cleared', async () => {
@@ -483,5 +505,175 @@ describe('downloadAllScooterQRs', () => {
     expect(png[2]).toBe(0x4e)
     expect(png[3]).toBe(0x47)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('buildDailyReportRows', () => {
+  const scooters = [
+    { id: 'SD-1', type: 'sd', deviceCondition: { baterai: 'drop', monitor: 'e4', lampu: 'nyala', rem: 'normal', ban: 'aman', setelan: 'ada' } },
+    { id: 'SD-2', type: 'sd', deviceCondition: null }
+  ]
+
+  it('pairs checkout→return as one row (session)', () => {
+    const rows = buildDailyReportRows('2025-01-10', [
+      { scooterId: 'SD-1', action: 'checkout', timestamp: '2025-01-10T08:00:00.000Z' },
+      { scooterId: 'SD-1', action: 'return',   timestamp: '2025-01-10T12:00:00.000Z' }
+    ], scooters)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].unit).toBe('SD-1')
+    expect(rows[0].no).toBe(1)
+    expect(rows[0].masukTs).not.toBeNull()
+    expect(rows[0].jumlahJam).toBeCloseTo(4, 1)
+    expect(rows[0].kondisi).toContain('Baterai drop')
+    expect(rows[0].kondisi).toContain('Error E4')
+  })
+
+  it('one row per session even with multiple rentals same day (Worst Case)', () => {
+    const rows = buildDailyReportRows('2025-01-10', [
+      { scooterId: 'SD-1', action: 'checkout', timestamp: '2025-01-10T07:00:00.000Z' },
+      { scooterId: 'SD-1', action: 'return',   timestamp: '2025-01-10T09:00:00.000Z' },
+      { scooterId: 'SD-1', action: 'checkout', timestamp: '2025-01-10T13:00:00.000Z' },
+      { scooterId: 'SD-1', action: 'return',   timestamp: '2025-01-10T15:00:00.000Z' }
+    ], scooters)
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0].no).toBe(1)
+    expect(rows[1].no).toBe(2)
+    expect(rows[0].jumlahJam).toBeCloseTo(2, 1)
+    expect(rows[1].jumlahJam).toBeCloseTo(2, 1)
+  })
+
+  it('still-out unit appears with masukTs null and computes hours up to now', () => {
+    const now = new Date('2025-01-10T14:00:00.000Z')
+    const rows = buildDailyReportRows('2025-01-10', [
+      { scooterId: 'SD-2', action: 'checkout', timestamp: '2025-01-10T10:00:00.000Z' }
+    ], scooters, now)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].masihKeluar).toBe(true)
+    expect(rows[0].masukTs).toBeNull()
+    expect(rows[0].jumlahJam).toBeCloseTo(4, 1)
+    expect(rows[0].kondisi).toBe('-')
+  })
+
+  it('ignores sessions whose checkout is on a different date', () => {
+    const rows = buildDailyReportRows('2025-01-10', [
+      { scooterId: 'SD-1', action: 'checkout', timestamp: '2025-01-09T22:00:00.000Z' },
+      { scooterId: 'SD-1', action: 'return',   timestamp: '2025-01-10T08:00:00.000Z' }
+    ], scooters)
+
+    expect(rows).toHaveLength(0)
+  })
+
+  it('handles malformed/empty input (Worst Case)', () => {
+    expect(buildDailyReportRows('2025-01-10', [], [], new Date())).toEqual([])
+    expect(buildDailyReportRows(null, [{ scooterId: 'X' }])).toEqual([])
+    expect(buildDailyReportRows('2025-01-10', [{ scooterId: 'SD-1', action: 'checkout', timestamp: 'not-a-date' }], scooters)).toEqual([])
+    expect(buildDailyReportRows('2025-01-10', null)).toEqual([])
+  })
+})
+
+describe('exportDailyReportToExcel', () => {
+  it('builds a workbook with Laporan Harian sheet and triggers download', async () => {
+    const writeFileMock = vi.fn()
+    vi.doMock('xlsx', () => ({
+      utils: {
+        book_new: () => ({ SheetNames: [], Sheets: {} }),
+        json_to_sheet: obj => ({ rows: obj }),
+        book_append_sheet: (wb, ws, name) => { wb.SheetNames.push(name); wb.Sheets[name] = ws },
+      },
+      writeFile: writeFileMock
+    }))
+
+    const { exportDailyReportToExcel } = await import('./storage')
+    await exportDailyReportToExcel(
+      '2025-01-10',
+      [{ scooterId: 'SD-1', action: 'checkout', timestamp: '2025-01-10T08:00:00.000Z' }],
+      [{ id: 'SD-1', type: 'sd', deviceCondition: null }],
+      new Date('2025-01-10T11:00:00.000Z')
+    )
+
+    expect(writeFileMock).toHaveBeenCalledTimes(1)
+    const [wb, filename] = writeFileMock.mock.calls[0]
+    expect(wb.SheetNames).toEqual(['Laporan Harian'])
+    expect(filename).toBe('Laporan-Harian-2025-01-10.xlsx')
+    const row = wb.Sheets['Laporan Harian'].rows[0]
+    expect(row['No']).toBeUndefined()
+    expect(row['Unit']).toBe('SD-1')
+    expect(row['Jumlah Jam']).toBeCloseTo(3, 1)
+    vi.doUnmock('xlsx')
+    vi.resetModules()
+  })
+
+  it('falls back to placeholder row when no data (Worst Case)', async () => {
+    const writeFileMock = vi.fn()
+    vi.doMock('xlsx', () => ({
+      utils: {
+        book_new: () => ({ SheetNames: [], Sheets: {} }),
+        json_to_sheet: obj => ({ rows: obj }),
+        book_append_sheet: (wb, ws, name) => { wb.SheetNames.push(name); wb.Sheets[name] = ws },
+      },
+      writeFile: writeFileMock
+    }))
+
+    const { exportDailyReportToExcel } = await import('./storage')
+    await exportDailyReportToExcel('2025-01-10', [], [])
+
+    const { rows } = writeFileMock.mock.calls[0][0].Sheets['Laporan Harian']
+    expect(rows).toHaveLength(1)
+    expect(rows[0]['Unit']).toBe('Tidak ada aktivitas')
+    vi.doUnmock('xlsx')
+    vi.resetModules()
+  })
+})
+
+describe('exportScooterConditionsToExcel', () => {
+  it('builds a workbook with all unit conditions and triggers download', async () => {
+    const writeFileMock = vi.fn()
+    vi.doMock('xlsx', () => ({
+      utils: {
+        book_new: () => ({ SheetNames: [], Sheets: {} }),
+        json_to_sheet: obj => ({ rows: obj }),
+        book_append_sheet: (wb, ws, name) => { wb.SheetNames.push(name); wb.Sheets[name] = ws },
+      },
+      writeFile: writeFileMock
+    }))
+
+    const { exportScooterConditionsToExcel } = await import('./storage')
+    await exportScooterConditionsToExcel([
+      { id: 'SD-2', type: 'sd', status: 'rusak', deviceCondition: { setelan: 'ada', lampu: 'tidak', baterai: 'drop', monitor: 'lain', monitor_detail: 'Spakbor retak', rem: 'normal', ban: 'botak', updated_at: '2025-01-10T09:00:00.000Z' } },
+      { id: 'SD-1', type: 'sd', status: 'available', deviceCondition: { setelan: 'ada', lampu: 'nyala', baterai: 'normal', monitor: 'normal', rem: 'normal', ban: 'aman', updated_at: '2025-01-10T08:00:00.000Z' } },
+    ])
+
+    expect(writeFileMock).toHaveBeenCalledTimes(1)
+    const [wb, filename] = writeFileMock.mock.calls[0]
+    expect(wb.SheetNames).toEqual(['Kondisi Unit'])
+    expect(filename).toMatch(/^Kondisi-Scooter-\d{4}-\d{2}-\d{2}\.xlsx$/)
+    const rows = wb.Sheets['Kondisi Unit'].rows
+    expect(rows).toHaveLength(2)
+    expect(rows[0]['ID Unit']).toBe('SD-1') // numeric sort first
+    expect(rows[1]['ID Unit']).toBe('SD-2')
+    expect(rows[1]['Status']).toBe('Offline / Rusak')
+    expect(rows[1]['Lampu']).toBe('Tidak nyala')
+    expect(rows[1]['Jenis Error']).toBe('Spakbor retak')
+    expect(rows[1]['Kondisi Unit']).toContain('Baterai drop')
+    vi.doUnmock('xlsx')
+    vi.resetModules()
+  })
+
+  it('throws when there are no scooters (Worst Case)', async () => {
+    vi.doMock('xlsx', () => ({
+      utils: {
+        book_new: () => ({ SheetNames: [], Sheets: {} }),
+        json_to_sheet: obj => ({ rows: obj }),
+        book_append_sheet: (wb, ws, name) => { wb.SheetNames.push(name); wb.Sheets[name] = ws },
+      },
+      writeFile: vi.fn()
+    }))
+    const { exportScooterConditionsToExcel } = await import('./storage')
+    await expect(exportScooterConditionsToExcel([])).rejects.toThrow(/Belum ada scooter/)
+    vi.doUnmock('xlsx')
+    vi.resetModules()
   })
 })

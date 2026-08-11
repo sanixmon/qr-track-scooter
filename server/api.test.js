@@ -153,7 +153,7 @@ describe('PUT /api/scooters/:id/device-condition', () => {
   it('saves device condition and exposes it via GET /api/scooters', async () => {
     await api('POST', '/api/scooters', { id: 'SD-40', type: 'sd' })
     const { status, data } = await api('PUT', '/api/scooters/SD-40/device-condition', {
-      setelan: 'ada', lampu: 'redup', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
+      setelan: 'ada', lampu: 'tidak', baterai: 'drop', monitor: 'e4', rem: 'normal', ban: 'botak'
     })
     expect(status).toBe(200)
     expect(data.success).toBe(true)
@@ -184,6 +184,18 @@ describe('PUT /api/scooters/:id/device-condition', () => {
     })
     expect(data.scooter.status).toBe('rusak')
     expect(data.scooter.maintenance_note).toBe('Error E4')
+  })
+
+  it('supports "lain" monitor with manual detail text', async () => {
+    await api('POST', '/api/scooters', { id: 'SD-45', type: 'sd' })
+    const { data } = await api('PUT', '/api/scooters/SD-45/device-condition', {
+      setelan: 'ada', lampu: 'tidak', baterai: 'normal', monitor: 'lain',
+      monitorDetail: 'Spakbor retak', rem: 'normal', ban: 'aman'
+    })
+    expect(data.device_condition.monitor).toBe('lain')
+    expect(data.device_condition.monitor_detail).toBe('Spakbor retak')
+    expect(data.scooter.status).toBe('rusak')
+    expect(data.scooter.maintenance_note).toBe('Spakbor retak')
   })
 
   it('auto-restores rusak scooter to available when Jenis Error is cleared', async () => {

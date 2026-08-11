@@ -23,7 +23,8 @@ function mapScooterFromApi(s) {
     maintenanceNote: s.maintenance_note ?? null,
     lastUpdated: s.last_updated,
     deviceCondition: s.device_condition ?? null,
-    activeMaintenance: s.active_maintenance ?? null
+    activeMaintenance: s.active_maintenance ?? null,
+    monitorDetail: s.device_condition?.monitor_detail ?? null
   }
 }
 
@@ -92,9 +93,13 @@ export async function getActivityLog() {
 }
 
 export async function saveDeviceCondition(scooterId, condition) {
+  const body = { ...condition }
+  if ('monitorDetail' in body) {
+    body.monitorDetail = body.monitorDetail ?? null
+  }
   const data = await api(`/api/scooters/${encodeURIComponent(scooterId)}/device-condition`, {
     method: 'PUT',
-    body: JSON.stringify(condition)
+    body: JSON.stringify(body)
   })
   return data.device_condition
 }
@@ -222,6 +227,125 @@ export async function exportData() {
   }
 }
 
+// ── Daily Report (per-day rental/churn table) ─────────────
+function dateKeyOf(d) {
+  const dt = d instanceof Date ? d : new Date(d)
+  if (isNaN(dt.getTime())) return null
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+function summarizeCondition(dc) {
+  if (!dc) return '-'
+  const bad = []
+  if (dc.baterai === 'drop') bad.push('Baterai drop')
+  if (dc.lampu === 'tidak') bad.push('Lampu tidak nyala')
+  if (dc.monitor && dc.monitor === 'lain' && dc.monitor_detail) bad.push(dc.monitor_detail)
+  else if (dc.monitor && dc.monitor !== 'normal') bad.push(`Error ${String(dc.monitor).toUpperCase()}`)
+  if (dc.rem === 'rusak') bad.push('Rem rusak')
+  if (dc.ban === 'botak') bad.push('Ban botak')
+  if (dc.ban === 'tipis') bad.push('Ban tipis')
+  if (dc.setelan === 'tidak') bad.push('Spakbor tidak ada')
+  return bad.length ? bad.join(', ') : 'Baik'
+}
+
+function timeHM(ts) {
+  try {
+    return new Date(ts).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ts || '-'
+  }
+}
+
+/** Build one-row-per-rental-session rows for a given date (pure, testable). */
+export function buildDailyReportRows(date, activityLog, scooters = [], now = new Date()) {
+  const reportKey = dateKeyOf(date)
+  if (!reportKey) return []
+
+  const typeByUnit = new Map()
+  const conditionByUnit = new Map()
+  for (const s of scooters) {
+    typeByUnit.set(s.id, s.type ?? null)
+    conditionByUnit.set(s.id, s.deviceCondition ?? null)
+  }
+
+  const perUnit = {}
+  if (Array.isArray(activityLog)) {
+    for (const e of activityLog) {
+      if (!e || !e.action) continue
+      if (!perUnit[e.scooterId]) perUnit[e.scooterId] = []
+      perUnit[e.scooterId].push(e)
+    }
+  }
+
+  const sessions = []
+  for (const [scooterId, logs] of Object.entries(perUnit)) {
+    const sorted = logs
+      .map(l => ({ ...l, dt: new Date(l.timestamp) }))
+      .filter(l => !isNaN(l.dt.getTime()))
+      .sort((a, b) => a.dt - b.dt)
+
+    let open = null
+    for (const l of sorted) {
+      if (l.action === 'checkout') {
+        if (open && dateKeyOf(open.checkoutTs) === reportKey) {
+          // previous session never closed on report day
+          open.keluar = null
+          sessions.push(open)
+        }
+        open = { scooterId, checkoutTs: l.dt, masukTs: null }
+      } else if (l.action === 'return' && open) {
+        open.masukTs = l.dt
+        if (dateKeyOf(open.checkoutTs) === reportKey) {
+          sessions.push(open)
+        }
+        open = null
+      }
+    }
+    if (open && dateKeyOf(open.checkoutTs) === reportKey) {
+      open.masukTs = null
+      sessions.push(open)
+    }
+  }
+
+  sessions.sort((a, b) => a.checkoutTs - b.checkoutTs)
+
+  return sessions.map((s, i) => {
+    const totalMs = s.masukTs ? s.masukTs - s.checkoutTs : Math.max(0, now - s.checkoutTs)
+    const rawHours = totalMs / 3600000
+    return {
+      no: i + 1,
+      unit: s.scooterId,
+      type: typeByUnit.get(s.scooterId) ?? null,
+      kondisi: summarizeCondition(conditionByUnit.get(s.scooterId)),
+      keluarTs: s.checkoutTs,
+      masukTs: s.masukTs,
+      masihKeluar: !s.masukTs,
+      jumlahJam: Math.max(0, Math.round(rawHours * 100) / 100)
+    }
+  })
+}
+
+export async function exportDailyReportToExcel(date, activityLog, scooters = [], now = new Date()) {
+  const rows = buildDailyReportRows(date, activityLog, scooters, now)
+  const reportKey = dateKeyOf(date) || new Date().toISOString().slice(0, 10)
+  const { utils, writeFile } = await import('xlsx')
+
+  const sheetRows = rows.length
+    ? rows.map(r => ({
+        'Unit': r.unit,
+        'Out (Keluar)': timeHM(r.keluarTs),
+        'In (Masuk)': r.masukTs ? timeHM(r.masukTs) : 'Belum kembali',
+        'Jumlah Jam': Number(r.jumlahJam.toFixed(2)),
+        'Kondisi Unit': r.kondisi,
+      }))
+    : [{ 'Unit': 'Tidak ada aktivitas', 'Out (Keluar)': '-', 'In (Masuk)': '-', 'Jumlah Jam': 0, 'Kondisi Unit': '-' }]
+
+  const wb = utils.book_new()
+  const ws = utils.json_to_sheet(sheetRows)
+  utils.book_append_sheet(wb, ws, 'Laporan Harian')
+  writeFile(wb, `Laporan-Harian-${reportKey}.xlsx`)
+}
+
 // ── Excel Export (per unit history) ────────────────────────
 function excelDate(ts) {
   try {
@@ -263,5 +387,68 @@ export async function exportScooterHistoryToExcel(scooter, logEntries, maintenan
   utils.book_append_sheet(wb, wsMaint, 'Riwayat Maintenance')
 
   const filename = `Riwayat-${scooter.id}-${new Date().toISOString().slice(0, 10)}.xlsx`
+  writeFile(wb, filename)
+}
+
+// ── Excel Export (all units condition snapshot) ─────────────
+const DEVICE_LABELS = {
+  setelan: { ada: 'Ada', tidak: 'Tidak ada' },
+  lampu: { nyala: 'Nyala', tidak: 'Tidak nyala' },
+  baterai: { normal: 'Normal', drop: 'Drop' },
+  monitor: {
+    normal: 'Normal', e2: 'E2', e4: 'E4', e16: 'E16', e6: 'E6', lain: 'Lain-lain'
+  },
+  rem: { normal: 'Normal', rusak: 'Rusak' },
+  ban: { aman: 'Aman', tipis: 'Tipis', botak: 'Botak' },
+}
+
+const TYPE_LABELS = { sd: 'Standar (SD)', sj: 'Jumbo (SJ)' }
+
+const STATUS_LABELS = {
+  available: 'Tersedia',
+  'in-use': 'Online',
+  rusak: 'Offline / Rusak',
+  maintenance: 'Maintenance',
+}
+
+export async function exportScooterConditionsToExcel(scooters) {
+  if (!scooters || scooters.length === 0) {
+    throw new Error('Belum ada scooter untuk diekspor.')
+  }
+  const { utils, writeFile } = await import('xlsx')
+
+  const sheetRows = scooters
+    .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
+    .map(s => {
+      const dc = s.deviceCondition || {}
+      const monitorLabel = dc.monitor === 'lain'
+        ? (dc.monitor_detail || 'Lain-lain')
+        : (DEVICE_LABELS.monitor[dc.monitor] || dc.monitor || '-')
+      const updatedAt = dc.updated_at ? excelDate(dc.updated_at) : '-'
+      return {
+        'ID Unit': s.id,
+        'Jenis': TYPE_LABELS[s.type] || s.type,
+        'Status': STATUS_LABELS[s.status] || s.status,
+        'Kondisi Unit': summarizeCondition(dc) || '-',
+        'Spakbor': DEVICE_LABELS.setelan[dc.setelan] || dc.setelan || 'Belum dicek',
+        'Lampu': DEVICE_LABELS.lampu[dc.lampu] || dc.lampu || 'Belum dicek',
+        'Baterai': DEVICE_LABELS.baterai[dc.baterai] || dc.baterai || 'Belum dicek',
+        'Jenis Error': dc.monitor ? monitorLabel : 'Belum dicek',
+        'Rem': DEVICE_LABELS.rem[dc.rem] || dc.rem || 'Belum dicek',
+        'Ban': DEVICE_LABELS.ban[dc.ban] || dc.ban || 'Belum dicek',
+        'Dicek': updatedAt,
+      }
+    })
+
+  const wb = utils.book_new()
+  const ws = utils.json_to_sheet(sheetRows)
+  ws['!cols'] = [
+    { wch: 10 }, { wch: 14 }, { wch: 18 }, { wch: 28 },
+    { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 20 },
+    { wch: 10 }, { wch: 10 }, { wch: 18 },
+  ]
+  utils.book_append_sheet(wb, ws, 'Kondisi Unit')
+
+  const filename = `Kondisi-Scooter-${new Date().toISOString().slice(0, 10)}.xlsx`
   writeFile(wb, filename)
 }

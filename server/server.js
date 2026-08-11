@@ -29,6 +29,7 @@ function serializeScooter(row, dc = null, activeMaint = null) {
       monitor: dc.monitor,
       rem: dc.rem,
       ban: dc.ban,
+      monitor_detail: dc.monitor_detail ?? null,
       updated_at: dc.updated_at
     } : null,
     active_maintenance: activeMaint ? {
@@ -55,9 +56,9 @@ function getScooterRow(id) {
 const DEVICE_FIELDS = ['setelan', 'lampu', 'baterai', 'monitor', 'rem', 'ban']
 const DEVICE_VALUES = {
   setelan: ['ada', 'tidak'],
-  lampu: ['nyala', 'redup'],
+  lampu: ['nyala', 'tidak'],
   baterai: ['normal', 'drop'],
-  monitor: ['normal', 'e2', 'e4', 'e16', 'e6'],
+  monitor: ['normal', 'e2', 'e4', 'e16', 'e6', 'lain'],
   rem: ['normal', 'rusak'],
   ban: ['botak', 'tipis', 'aman']
 }
@@ -221,15 +222,20 @@ app.put('/api/scooters/:id/device-condition', (req, res) => {
     }
   }
 
+  // Free-text detail used only when monitor === 'lain' ("Lain-lain, ketik manual")
+  const monitorDetail = req.body?.monitorDetail
+  const detail = (typeof monitorDetail === 'string' ? monitorDetail.trim() : '') || null
+
   db.prepare(`
-    INSERT INTO device_conditions (scooter_id, setelan, lampu, baterai, monitor, rem, ban, updated_at)
-    VALUES (@id, @setelan, @lampu, @baterai, @monitor, @rem, @ban, @updated_at)
+    INSERT INTO device_conditions (scooter_id, setelan, lampu, baterai, monitor, rem, ban, monitor_detail, updated_at)
+    VALUES (@id, @setelan, @lampu, @baterai, @monitor, @rem, @ban, @monitor_detail, @updated_at)
     ON CONFLICT(scooter_id) DO UPDATE SET
       setelan = @setelan, lampu = @lampu, baterai = @baterai, monitor = @monitor,
-      rem = @rem, ban = @ban, updated_at = @updated_at
+      rem = @rem, ban = @ban, monitor_detail = @monitor_detail, updated_at = @updated_at
   `).run({
     id,
     ...values,
+    monitor_detail: values.monitor === 'lain' ? detail : null,
     updated_at: new Date().toISOString()
   })
 
@@ -238,10 +244,13 @@ app.put('/api/scooters/:id/device-condition', (req, res) => {
   const isError = values.monitor !== null && values.monitor !== 'normal'
   if (isError) {
     if (scooter.status === 'available') {
+      const note = values.monitor === 'lain'
+        ? (detail || 'Lain-lain')
+        : `Error ${values.monitor.toUpperCase()}`
       db.prepare(`
         UPDATE scooters SET status = 'rusak', maintenance_note = ?, last_updated = ?
         WHERE id = ?
-      `).run(`Error ${values.monitor.toUpperCase()}`, new Date().toISOString(), id)
+      `).run(note, new Date().toISOString(), id)
     }
   } else if (scooter.status === 'rusak') {
     db.prepare(`
@@ -262,6 +271,7 @@ app.put('/api/scooters/:id/device-condition', (req, res) => {
       monitor: dc.monitor,
       rem: dc.rem,
       ban: dc.ban,
+      monitor_detail: dc.monitor_detail ?? null,
       updated_at: dc.updated_at
     }
   })
