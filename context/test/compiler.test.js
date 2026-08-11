@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { MemoryContextStore } from '../lib/store.js'
-import { Compiler } from '../lib/compiler.js'
+import { MemoryContextStore } from '../store/store.js'
+import { Compiler } from '../compiler/compiler.js'
+import { validateExtraction, LlmExtractor } from '../compiler/llm.js'
 import { fixedClock } from './helpers.js'
 
 function makeCompiler(now = fixedClock()) {
@@ -133,6 +134,82 @@ describe('Compiler — question & task resolution', () => {
     const task = store.get('task-001')
     expect(task.status).toBe('done')
     expect(store.list({ type: 'task', status: 'active' })).toHaveLength(0)
+  })
+})
+
+describe('Compiler — LLM extractor (mocked)', () => {
+  function cannedResponse(itemsJson) {
+    return {
+      async json() { return { content: [{ text: itemsJson }] } },
+      ok: true,
+    }
+  }
+
+  it('uses validated LLM extraction output', async () => {
+    const fetchImpl = async () => cannedResponse(JSON.stringify({
+      items: [
+        { type: 'decision', content: 'Kita pakai PostgreSQL untuk database', confidence: 0.9, importance: 4, topic: 'database', keywords: ['postgresql'] },
+        { type: 'speculation', content: 'Mungkin butuh caching', confidence: 0.3, importance: 1, status: 'temporary' },
+      ],
+    }))
+    const store = new MemoryContextStore()
+    const extractor = new LlmExtractor({ apiKey: 'test-key', fetchImpl, now: fixedClock() })
+    const compiler = new Compiler({ store, extractor })
+    const snap = await compiler.compile({ sessionId: 'session-001', messages: [
+      { role: 'user', content: 'Kita pakai PostgreSQL untuk database' },
+    ] })
+    expect(snap.extractor_used).toBe('llm')
+    expect(snap.new_decisions).toHaveLength(1)
+    expect(snap.new_decisions[0].content).toContain('PostgreSQL')
+    expect(store.list({ type: 'speculation' })[0].status).toBe('temporary')
+  })
+
+  it('validateExtraction rejects malformed LLM output', () => {
+    expect(() => validateExtraction('{nope')).toThrow(/invalid JSON/)
+    expect(() => validateExtraction(JSON.stringify({ items: [{ type: 'nonsense', content: 'x' }] }))).toThrow(/type invalid/)
+    expect(() => validateExtraction(JSON.stringify({ items: [{ type: 'fact', confidence: 5, content: 'x' }] }))).toThrow(/confidence invalid/)
+    expect(validateExtraction(JSON.stringify({ items: [] }))).toEqual([])
+  })
+
+  it('resolves contradictions on the LLM path too (topicStable derived)', async () => {
+    const fetchImpl = async () => cannedResponse(JSON.stringify({
+      items: [{ type: 'decision', content: 'Project sekarang menggunakan Fastify', confidence: 0.95, importance: 4, topic: 'framework' }],
+    }))
+    const store = new MemoryContextStore()
+    const compiler = new Compiler({
+      store,
+      extractor: new LlmExtractor({ apiKey: 'k', fetchImpl, now: fixedClock() }),
+    })
+    // Seed prior claim Express via rule extractor (default fallback session)
+    await new Compiler({ store, now: fixedClock() }).compile({
+      sessionId: 'session-001',
+      messages: [{ role: 'user', content: 'Project menggunakan Express' }],
+    })
+    const snap = await compiler.compile({ sessionId: 'session-002', messages: [{ role: 'user', content: 'Project sekarang menggunakan Fastify' }] })
+    expect(snap.superseded_items).toHaveLength(1)
+    expect(snap.superseded_items[0].content).toContain('Express')
+    expect(store.list({ type: 'decision', status: 'active' })[0].content).toContain('Fastify')
+  })
+
+  it('fails hard when the LLM call errors and fallback is disabled', async () => {
+    const store = new MemoryContextStore()
+    const extractor = new LlmExtractor({ apiKey: 'test-key', fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'unauthorized' }) })
+    const compiler = new Compiler({ store, extractor, fallbackExtractor: null })
+    await expect(compiler.compile({ sessionId: 'session-001', messages: [{ role: 'user', content: 'x' }] })).rejects.toThrow(/401/)
+  })
+
+  it('falls back to rule-based extraction when the LLM extractor fails', async () => {
+    const store = new MemoryContextStore()
+    const flaky = {
+      async extract() { throw new Error('network down') },
+    }
+    const compiler = new Compiler({ store, extractor: flaky }) // fallbackExtractor defaults to RuleExtractor
+    const snap = await compiler.compile({ sessionId: 'session-001', messages: [
+      { role: 'user', content: 'Kita pakai PostgreSQL untuk database' },
+    ] })
+    expect(snap.extractor_used).toBe('rule-fallback')
+    expect(snap.new_decisions).toHaveLength(1)
+    expect(snap.new_decisions[0].content).toContain('PostgreSQL')
   })
 })
 

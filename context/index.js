@@ -1,16 +1,18 @@
 // ── Public API ────────────────────────────────────────────
-// One entry point wiring store + compiler + sessions + builder + output.
+// One entry point wiring store + extractor + compiler + sessions + builder.
 
 import path from 'node:path'
-import { FileContextStore } from './lib/fileStore.js'
-import { MemoryContextStore } from './lib/store.js'
-import { Compiler } from './lib/compiler.js'
-import { ContextBuilder } from './lib/builder.js'
-import { SessionManager } from './lib/session.js'
-import { writeMarkdown, updateManifest } from './lib/output.js'
-import { extractTopic } from './lib/topics.js'
-import { extractCandidates, classifyUtterance, splitUtterances } from './lib/extractor.js'
-import { scoreEntry, searchEntries, rankRelevant } from './lib/relevance.js'
+import { FileContextStore } from './store/fileStore.js'
+import { MemoryContextStore } from './store/store.js'
+import { Compiler } from './compiler/compiler.js'
+import { ContextBuilder } from './builder/builder.js'
+import { SessionManager } from './session/session.js'
+import { writeMarkdown, updateManifest } from './render/output.js'
+import { extractTopic } from './compiler/topics.js'
+import { extractCandidates, classifyUtterance, splitUtterances, RuleExtractor } from './compiler/extract.js'
+import { LlmExtractor, createExtractor, validateExtraction, EXTRACTION_SCHEMA, SYSTEM_PROMPT } from './compiler/llm.js'
+import { scoreEntry, searchEntries, rankRelevant } from './retrieval/relevance.js'
+import { resolveLayerBudgets, LAYER_BUDGETS } from './config.js'
 
 export {
   FileContextStore,
@@ -24,25 +26,52 @@ export {
   extractCandidates,
   classifyUtterance,
   splitUtterances,
+  RuleExtractor,
+  LlmExtractor,
+  createExtractor,
+  validateExtraction,
+  EXTRACTION_SCHEMA,
+  SYSTEM_PROMPT,
   scoreEntry,
   searchEntries,
   rankRelevant,
+  resolveLayerBudgets,
+  LAYER_BUDGETS,
 }
-export { ENTRY_TYPES, ENTRY_STATUSES, SUPERSEDE_TYPES, ContextStore } from './lib/store.js'
-export { estimateTokens, LAYER_NAMES } from './lib/builder.js'
+export { ENTRY_TYPES, ENTRY_STATUSES, SUPERSEDE_TYPES, ContextStore } from './store/store.js'
+export { estimateTokens, LAYER_NAMES } from './builder/builder.js'
 
 /**
  * Create a fully wired context system rooted at `dir` (default `.ai`).
- * - store: FileContextStore persisted to `<dir>/knowledge/knowledge.jsonl`
- * - sessionsDir: `<dir>/sessions`
+ *
+ * Extraction: `createExtractor({ env })` — LlmExtractor (Claude) bila
+ * ANTHROPIC_API_KEY tersedia, RuleExtractor (deterministik) sebagai fallback.
+ * Compiler otomatis memakai rule-based fallback bila panggilan LLM gagal.
  */
-export function createSystem({ dir = '.ai', file = null, now = () => Date.now() } = {}) {
+export function createSystem({
+  dir = '.ai',
+  file = null,
+  now = () => Date.now(),
+  env = null,
+  extractor = null,
+  budgets = {},
+} = {}) {
   const root = dir
-  const store = new FileContextStore({ file: file ?? path.join(root, 'knowledge', 'knowledge.jsonl'), now })
-  const compiler = new Compiler({ store, now })
+  const envObj = env ?? (typeof process !== 'undefined' ? process.env : {})
+  const manifestFile = path.join(root, 'manifest.json')
+  const store = new FileContextStore({
+    file: file ?? path.join(root, 'knowledge', 'knowledge.jsonl'),
+    manifestFile,
+    now,
+  })
+  const compiler = new Compiler({
+    store,
+    now,
+    extractor: extractor ?? createExtractor({ env: envObj, now }),
+  })
   const sessionsDir = path.join(root, 'sessions')
   const sessions = new SessionManager({ store, dir: root, now, compiler })
-  const builder = new ContextBuilder({ store, sessionsDir, now })
+  const builder = new ContextBuilder({ store, sessionsDir, now, budgets, env: envObj })
   return {
     dir: root,
     store,

@@ -7,212 +7,207 @@ bukan raw transcript.
 **Prinsip inti:** `AI → conversation → context compiler → persistent knowledge → context retrieval → AI`.
 Bukan `AI → simpan chat → masukkan semua chat ke sesi berikutnya`.
 
+> Bahasa/runtime/kondisi ditentukan lewat **code review project target** —
+> lihat [`CODE_REVIEW.md`](./CODE_REVIEW.md): **JavaScript (ESM), Node ≥ 20,
+> pnpm, Vitest**. Storage MVP file-based; compiler LLM-based (Claude) dengan
+> fallback deterministik.
+
 ---
 
 ## 1. Arsitektur
 
 ```
 context/
-├── index.js           → public API facade (createSystem)
-├── cli.js             → CLI: init / session-begin / message / compile / build / status
-└── lib/
-    ├── normalize.js   → tokenize, stopwords (id/en), normalizeText, jaccard/similarity
-    ├── ids.js         → id generator ({type}-NNN)
-    ├── store.js       → ContextStore contract + MemoryContextStore
-    ├── fileStore.js   → FileContextStore (JSONL, atomic write)  ← default
-    ├── topics.js      → extractTopic: kategori domain + pola "untuk/for" + fallback
-    ├── extractor.js   → utterance split + klasifikasi deterministik (FACT/DECISION/…)
-    ├── compiler.js    → pipeline: extract → resolve → persist → snapshot
-    ├── relevance.js   → search + getRelevant (ranking: overlap/recency/importance/status/confidence)
-    ├── builder.js     → ContextBuilder: assembling layer L0–L5 + token budget
-    ├── output.js      → human-readable markdown (.ai/context/*.md) + manifest
-    └── session.js     → SessionManager: lifecycle sesi + snapshot
+├── index.js               → public API facade (createSystem)
+├── cli.js                 → CLI: init / session-begin / message / compile / build / status / supersede / optimize
+├── config.js              → TOKEN BUDGET per layer (single source, env-overridable)
+├── CODE_REVIEW.md         → keputusan bahasa/runtime dari code review project
+├── store/
+│   ├── store.js           → ContextStore contract + MemoryContextStore
+│   ├── fileStore.js       → FileContextStore (JSONL, atomic) + counter di manifest
+│   └── ids.js             → id {type}-NNN, counter per type
+├── compiler/
+│   ├── llm.js             → LlmExtractor (Claude): prompt template + JSON schema + mockable
+│   ├── extract.js         → RuleExtractor (fallback deterministik)
+│   ├── topics.js          → extractTopic (kategori domain + pola "untuk/for" + fallback)
+│   └── compiler.js        → pipeline: extract → validate → dedup → kontradiksi → persist → snapshot
+├── retrieval/
+│   └── relevance.js       → search + getRelevant (scoring rule-based, budget-aware)
+├── builder/
+│   └── builder.js         → ContextBuilder: layer L0–L5 + token budget + redaksi sensitive
+├── render/
+│   └── output.js          → markdown .ai/context/*.md (redaksi sensitive) + manifest
+├── session/
+│   └── session.js         → SessionManager: lifecycle + snapshot
+└── shared/
+    └── normalize.js       → tokenize, stopwords, similarity, estimateTokens
 ```
 
 Alur data:
 
 ```
-SessionManager.beginSession
-   └─ recordMessage (user/assistant)
-Compiler.compile(session)
-   ├─ extract candidates dari utterances (deterministik; pluggable untuk LLM nanti)
-   ├─ classify → validate (confidence) → deduplicate → resolveContradictions
-   ├─ resolve question (jawaban) & task (selesai)
-   ├─ persist ke ContextStore (JSONL = source of truth)
-   └─ snapshot → .ai/sessions/session-*.md + update manifest
+SessionManager.beginSession → recordMessage
+Compiler.compile(session)          ← EXPLICIT trigger (compileSession), tanpa auto-trigger
+  ├─ extract: LlmExtractor (Claude, JSON tervalidasi) — fallback RuleExtractor bila gagal
+  ├─ validate (JSON schema) → deduplicate → resolveContradictions
+  ├─ resolve question / task
+  ├─ persist ke ContextStore (JSONL = source of truth)
+  └─ snapshot → .ai/sessions/session-*.md + update manifest
 ContextBuilder.build(userRequest)
-   └─ getRelevant → susun layer L0..L5 → final AI context (token budget)
+  └─ getRelevant → susun layer L0..L5 (budget per layer) → final AI context
 ```
-
-**Storage abstraction:** semua logika bergantung pada interface `ContextStore`
-(get/add/update/supersede/delete/search/getRelevant/snapshot), bukan pada
-implementasi tertentu. `FileContextStore` (JSONL) adalah default; `MemoryContextStore`
-untuk test/embedding; SQLite/vector DB bisa di-swap tanpa mengubah compiler/builder.
 
 ## 2. Schema data
 
-Setiap knowledge entry (baris JSONL):
+Setiap knowledge item (baris JSONL):
 
 ```js
 {
-  id: "decision-042",            // {type}-NNN, counter per type
+  id: "decision-042",            // {type}-NNN, counter di manifest.json
   type: "decision",              // fact|decision|preference|project|constraint|state|
                                  // goal|term|assumption|question|task|lesson|speculation
   content: "Use PostgreSQL",
   topic: "database",             // normalized topic key (stable = domain tunggal)
   keywords: ["postgresql", "database"],
   status: "active",              // active|superseded|deprecated|uncertain|temporary|done
-  confidence: 0.9,               // 0..1
+  sensitive: false,              // PRIVACY: diredaksi dari markdown, tetap di structured store
+  confidence: 0.9,
   importance: 4,                 // 1..5
   source_session: "session-017",
-  created_at: "<ISO>",
-  last_verified: "<ISO>",
-  supersedes: null,              // id keputusan yang digantikan
+  created_at, last_verified,     // ISO
+  supersedes: null,              // id yang digantikan (lineage)
   superseded_by: null,           // id pengganti
-  projects: [],                  // relasi project
-  meta: {}                       // detail per type (question.resolved_by, task dst.)
+  projects: [],
+  meta: {}
 }
 ```
 
-Provenance wajib: `source_session`, `created_at`, `last_verified`, `supersedes`/
-`superseded_by`. Entry lama **tidak dihapus** saat berubah — ditandai `superseded`.
-
-## 3. Lifecycle session
+## 3. Lifecycle session & snapshot
 
 ```
-session-N → messages → compile(checkpoint/akhir) → snapshot → persistent context
+session-N → messages → compile (manual) → snapshot → persistent context
 session-(N+1) → ContextBuilder(userRequest) → AI context → conversation → compile lagi
 ```
 
-Snapshot (per sesi):
+Snapshot:
 
 ```js
-{
-  session_id, summary,
-  new_knowledge: [], updated_knowledge: [], new_decisions: [],
-  superseded_items: [], open_questions: [], pending_tasks: []
-}
+{ session_id, summary, new_knowledge: [], updated_knowledge: [],
+  new_decisions: [], superseded_items: [], open_questions: [], pending_tasks: [] }
 ```
 
-Snapshot dipakai untuk memperbarui persistent context dan dirender ke
-`.ai/sessions/session-*.md` (human readable).
+`ContextStore.snapshot(sessionId)` juga bisa memfilter per sesi.
 
 ## 4. Strategi compilation
 
-Pipeline deterministik:
+- **Extract/Classify/Validate dijalankan LLM (Claude)** — `compiler/llm.js`:
+  prompt template eksplisit (`SYSTEM_PROMPT`), output WAJIB JSON yang divalidasi
+  (`EXTRACTION_SCHEMA`), temperature 0. Butuh reasoning untuk membedakan
+  FACT vs ASSUMPTION vs SPECULATION.
+- **Isolasi**: semua pemanggilan LLM di satu module; `fetchImpl`/client bisa
+  di-mock; provider bisa diganti tanpa mengubah pipeline.
+- **Fallback deterministik** (`compiler/extract.js`): `RuleExtractor` dipakai
+  otomatis bila `ANTHROPIC_API_KEY` tidak ada atau panggilan LLM gagal
+  (dictatat `extractor_used: rule-fallback` di snapshot). Ini menjaga MVP
+  tetap berfungsi dan testable.
+- **Trigger eksplisit**: `compileSession(sessionId)` — TIDAK ada auto-trigger
+  berdasarkan jumlah pesan/token.
 
-```
-splitUtterances → classifyUtterance (rules, first-match-wins) → confidence/importance
-→ extractTopic (category/purpose/fallback) → resolveContradictions vs store
-→ persist → resolveQuestion/resolveTask → snapshot
-```
+## 5. Strategi retrieval (MVP)
 
-Klasifikasi berbasis marker (Indonesia/Inggris):
-- `decision`: pakai/gunakan/pilih/memutuskan/migrate/use/choose/decided/dipakai …
-- `constraint`: harus/wajib/tidak boleh/jangan/must/cannot/maksimal/batas …
-- `preference`: saya suka/lebih suka/prefer/preferensi …
-- `assumption`: asumsi/anggap/asumsikan/assume/seandainya …
-- `question`: diakhiri `?` / kata tanya — **hanya dari user**
-- `state`: sekarang/saat ini/status/currently/sedang …
-- `task`: tolong/buat/bikin/fix/perbaiki/selesaikan … — **hanya dari user**
-- `goal` / `term` / `lesson` / `speculation` (mungkin/kayaknya → confidence rendah)
-- `fact`: fallback kalimat deklaratif
-
-Compiler **tidak** menganggap semua informasi sebagai fakta; speculation/assumption
-diberi confidence rendah dan tidak pernah men-supersede. Extractor berupa fungsi
-terisolasi sehingga dapat diganti dengan ekstraksi berbasis LLM tanpa mengubah pipeline.
-
-## 5. Strategi retrieval
-
-`getRelevant(query)` — ranking deterministik:
+Rule-based scoring di `retrieval/relevance.js`:
 
 ```
 score = keywordOverlap × (0.5 + 0.5×importance/5) × statusFactor × confidence
         × (0.6 + 0.4×recency)
 ```
 
-- `keywordOverlap` = token query ∩ (content + keywords)
 - `statusFactor`: active 1, temporary 0.8, uncertain 0.6, done 0.5,
-  superseded/deprecated 0 (dikecualikan kecuali `includeObsolete`)
-- `recency` = exponential decay terhadap `last_verified` (half-life 30 hari)
-
-Hasil diranking lalu dipotong top-k. Deterministik: tie-break oleh id.
+  superseded/deprecated 0 (dikecualikan kecuali `includeObsolete`).
+- `rankRelevant(context, { budget })` memotong kandidat berdasarkan **ranking
+  score** sampai batas token (enforcement budget L3).
+- Scoring function terisolasi (strategy pattern) — vector/embedding bisa
+  dicolok belakangan tanpa mengubah interface publik.
 
 ## 6. Contradiction handling
 
-`extractTopic` menandai `stable` untuk topik "single-truth" (kategori domain:
-database/framework/auth/deploy/dst. + pola "untuk/for X"). Untuk entry stable
-dengan **type sama dalam supersede-set {fact, state, decision, constraint}**:
+`extractTopic` menandai `stable` untuk topik "single-truth". Untuk item stable
+dengan type sama dalam supersede-set {fact, state, decision, constraint}:
 
 | Kondisi | Aksi |
 |---|---|
-| Normalized content sama (similarity ≥ 0.8) | dedup: update `last_verified` |
+| Normalized content sama (sim ≥ 0.8) | dedup: update `last_verified` |
 | Content beda + confidence baru ≥ lama | old → `superseded` (`superseded_by`), new → `active` |
 | Content beda + confidence baru rendah (< 0.5) | new → `uncertain`, keduanya dipertahankan |
 | Content beda + confidence seimbang | new → `uncertain` (tidak mengarang pemenang) |
 
-Contoh: `"Project menggunakan Express"` → `"Project sekarang menggunakan Fastify"`:
-topik `framework` (stable) → Express `superseded`, Fastify `active`.
-Topik non-stable (fallback) tidak pernah di-supersede — fakta terbuka bisa hidup berdampingan.
+Lineage dijaga: `supersede(oldId, newItem)` menambah item baru dengan
+`supersedes: oldId` dan menandai item lama `superseded_by: <id baru>` —
+item lama **tidak pernah dihapus**.
 
 ## 7. Strategi token optimization
 
-- `compiler.deprecateObsolete({maxAgeDays=90, minImportance=2})` (maintenance,
-  juga via CLI `optimize`): entry importance rendah + sudah lama tidak diverifikasi
-  ulang → `deprecated` (bukan dihapus). Decision/constraint/goal/project
-  dilindungi — tetap di context sampai eksplisit di-supersede.
-- Markdown & build hanya menyertakan status `active` (+ trail singkat superseded
-  di decisions.md), importance ≥ threshold per layer.
-- `ContextBuilder` menyusun layer **berurutan sesuai prioritas** dan memotong di
-  token budget (`maxTokens`), melaporkan `omitted`.
-- Goal: *maximize continuity with minimum context tokens.*
+**Budget per layer (config.js — konstanta eksplisit, env-overridable):**
+
+| Layer | Budget (token) |
+|---|---|
+| L0 Core | ~300 |
+| L1 Project/Domain | ~800 |
+| L2 Active Decisions & Constraints | ~800 |
+| L3 Relevant Knowledge | ~1500 (dipotong berdasarkan ranking) |
+| L4 Historical | on-demand (0) |
+| L5 Raw | fallback terakhir |
+
+- `resolveLayerBudgets()`: default → env (`CONTEXT_BUDGET_L0…L4`) → override.
+- `ContextBuilder.build()` menegakkan budget per layer (`fitToBudget`) + cap
+  total (`maxTokens`, default = jumlah budget layer yang diminta).
+- `compiler.deprecateObsolete({maxAgeDays, minImportance})` → entry basi bernilai
+  rendah ditandai `deprecated` (decision/constraint/goal/project dilindungi).
 
 ## 8. ContextStore API
 
 ```js
 ContextStore
-├── get(id) → entry
-├── add(entry) → stored            // validasi type/status, auto id/keywords/created
-├── update(id, patch) → entry      // bump last_verified
-├── supersede(id, {supersededBy, reason}) → entry
-├── delete(id) → boolean           // hard delete (kesalahan nyata)
-├── search(query, opts) → [{entry, score}]
-├── getRelevant(query, opts) → top-k entries
-├── snapshot() → {entries, stats}
+├── get(id)
+├── list(opts)
+├── add(item)                       // auto id (counter manifest), keywords, timestamp
+├── update(id, patch)               // bump last_verified, refresh keywords
+├── supersede(oldId, newItem)       // lineage: new.supersedes=oldId, old.superseded_by=newId
+├── delete(id)
+├── search(context, opts)           // [{entry, score}]
+├── getRelevant(context, { budget }) // top-k ranking, budget-aware
+├── snapshot(sessionId?)            // entries + stats (bisa difilter per sesi)
 └── clear()
 ```
 
-Implementasi: `MemoryContextStore` (map), `FileContextStore` (JSONL + atomic
-temp-rename). Tidak ada ketergantungan ke satu database/vector DB.
+**ID generation:** `{type}-{zero-padded}` per project; counter disimpan di
+`manifest.json` (`id_counters`). Asumsi single-writer — TODO comment untuk
+locking bila ada concurrent writers.
 
-## 9. Testing strategy
+## 9. Testing strategy (kriteria sukses)
 
-Vitest, deterministik (injeksi `now`, tmp dir via `fs.mkdtemp`):
-- store: CRUD, counter id, filter, persist roundtrip (File)
-- topics: kategori/purpose/fallback + stable flag
-- extractor: klasifikasi tiap type, question/task hanya dari user
-- compiler: dedup, supersede (Express→Fastify, PostgreSQL→SQLite), uncertain,
-  resolve question/task, bentuk snapshot
-- relevance: active > superseded, relevansi, recency, includeObsolete
-- builder: susunan layer, potongan budget, obsolete dikecualikan
-- session/output: lifecycle penuh → file md + manifest benar
+1. **Contradiction**: A kontradiktif B → A `superseded`, B `active`.
+2. **Uncertain**: dua info konflik tanpa indikator valid → `uncertain`, bukan pilih sembarangan.
+3. **Deduplication**: substansi sama diinput dua kali → satu entry aktif.
+4. **Token budget enforcement**: `getRelevant`/builder tidak melebihi budget L3, item importance/relevance tertinggi lolos.
+5. **Sensitive redaction**: `sensitive: true` tidak muncul di compiled markdown, tetap ada di structured store.
+6. **Lineage integrity**: decision yang di-supersede → `supersedes` menunjuk ID lama, ID lama tidak terhapus.
+
+Ditambah: validasi JSON schema LLM, fallback rule-based saat LLM gagal, counter
+manifest (tidak pernah reuse id), snapshot per sesi.
 
 ## 10. Extensibility
 
-- **LLM extractor**: ganti `extractCandidates` (interface tetap sama) — cukup
-  sediakan `compiler` dengan extractor kustom.
-- **Vector DB**: implementasi `ContextStore` baru; `getRelevant` sudah menjadi
-  method interface.
-- **Deterministic by default**: tanpa LLM, sistem tetap berfungsi penuh (CLI).
+- **LLM provider**: ganti `LlmExtractor` (interface `extract(messages, ctx)`).
+- **Vector DB**: implementasi `ContextStore` baru; `getRelevant` sudah method interface.
+- **Deterministic by default**: tanpa API key, sistem tetap berfungsi penuh (rule fallback).
 
-## Layout storage (default `.ai/`)
+## Layout storage (`.ai/`)
 
 ```
 .ai/
-├── context/{core,project,decisions,constraints,current-state,glossary}.md
+├── context/{core,project,decisions,constraints,current-state,glossary}.md  ← redaksi sensitive
 ├── knowledge/knowledge.jsonl      ← source of truth (structured)
 ├── sessions/session-*.md          ← snapshot per sesi (human readable)
-└── manifest.json                  ← versi, stats, last_session
+└── manifest.json                  ← versi, stats, last_session, id_counters
 ```
-
-Markdown adalah *compiled representation*, bukan satu-satunya source of truth.

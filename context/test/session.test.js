@@ -11,7 +11,8 @@ afterEach(() => {
 function setup() {
   const dir = tempDir()
   dirs.push(dir)
-  const system = createSystem({ dir, now: fixedClock() })
+  // env: {} → hermetic (tanpa ANTHROPIC_API_KEY), extractor = rule fallback.
+  const system = createSystem({ dir, now: fixedClock(), env: {} })
   return { dir, system }
 }
 
@@ -61,6 +62,46 @@ describe('SessionManager + createSystem', () => {
     system.sessions.createSession()
     expect(() => system.sessions.addMessage('session-001', 'robot', 'x')).toThrow(/invalid role/)
     expect(() => system.sessions.addMessage('session-999', 'user', 'x')).toThrow(/unknown session/)
+  })
+
+  it('redacts sensitive items from markdown but keeps them in the structured store', async () => {
+    const { dir, system } = setup()
+    system.sessions.createSession()
+    system.sessions.addMessage('session-001', 'user', 'Kita pakai API key sk_live_abc123 untuk integrasi payment')
+    await system.sessions.compileSession('session-001')
+
+    // Structured store: tersimpan + flagged sensitive
+    const sensitive = system.store.list({ sensitive: true })
+    expect(sensitive.length).toBeGreaterThan(0)
+    expect(sensitive[0].content).toContain('sk_live_abc123')
+
+    // Markdown (human readable): TIDAK boleh memuat secret
+    const allMarkdown = [
+      readFileOr(`${dir}/context`, 'core.md'),
+      readFileOr(`${dir}/context`, 'current-state.md'),
+      readFileOr(`${dir}/sessions`, 'session-001.md'),
+    ].join('\n')
+    expect(allMarkdown).not.toContain('sk_live_abc123')
+  })
+
+  it('redacts sensitive items even in superseded trails and session snapshots', async () => {
+    const { dir, system } = setup()
+    system.sessions.createSession()
+    system.sessions.addMessage('session-001', 'user', 'Kita pakai API key sk_live_abc123 untuk payment')
+    await system.sessions.compileSession('session-001')
+    system.sessions.createSession()
+    system.sessions.addMessage('session-002', 'user', 'Kita pakai API key sk_test_zzz untuk payment')
+    await system.sessions.compileSession('session-002')
+
+    const superseded = system.store.list({ status: 'superseded' })
+    expect(superseded).toHaveLength(1)
+
+    const allMarkdown = [
+      readFileOr(`${dir}/context`, 'decisions.md'),
+      readFileOr(`${dir}/sessions`, 'session-002.md'),
+    ].join('\n')
+    expect(allMarkdown).not.toContain('sk_live_abc123')
+    expect(allMarkdown).not.toContain('sk_test_zzz')
   })
 
   it('a second session supersedes the first and updates the manifest', async () => {

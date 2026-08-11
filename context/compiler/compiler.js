@@ -1,12 +1,18 @@
 // ── Context Compiler ──────────────────────────────────────
-// conversation → extract → classify → validate → deduplicate → resolve
+// conversation → extract (LLM) → validate → deduplicate → resolve
 // contradictions → update existing → mark obsolete → persist → snapshot
+//
+// Extraction is pluggable (see compiler/llm.js + compiler/extract.js):
+//   - default: LlmExtractor (Claude) bila ANTHROPIC_API_KEY tersedia
+//   - fallback: RuleExtractor (deterministik) bila key tidak ada / LLM gagal
+// Compile hanya dipicu eksplisit via `compileSession(sessionId)` — tanpa
+// auto-trigger berdasarkan jumlah pesan atau token.
 
-import { extractCandidates } from './extractor.js'
-import { similarity } from './normalize.js'
-import { SUPERSEDE_TYPES } from './store.js'
+import { similarity } from '../shared/normalize.js'
+import { SUPERSEDE_TYPES } from '../store/store.js'
+import { RuleExtractor } from './extract.js'
 
-const MINI_KEYS = ['id', 'type', 'content', 'topic', 'status', 'confidence', 'importance', 'source_session']
+const MINI_KEYS = ['id', 'type', 'content', 'topic', 'status', 'confidence', 'importance', 'sensitive', 'source_session']
 
 function mini(entry) {
   const out = {}
@@ -14,23 +20,58 @@ function mini(entry) {
   return out
 }
 
+// Sensitive items never appear in the human-readable summary either.
+function display(entry) {
+  return entry.sensitive ? `[sensitive] (${entry.id})` : `${entry.content} (${entry.id})`
+}
+
 function buildSummary(sessionId, { newKnowledge, updated, superseded, decisions, openQuestions, pendingTasks }) {
   const parts = []
   parts.push(`Session ${sessionId}: ${newKnowledge.length} new, ${updated.length} verified, ${superseded.length} superseded.`)
-  if (decisions.length) parts.push(`Decisions: ${decisions.map(d => `${d.content} (${d.id})`).join('; ')}.`)
-  if (openQuestions.length) parts.push(`Open questions: ${openQuestions.map(q => q.content).join('; ')}.`)
-  if (pendingTasks.length) parts.push(`Pending tasks: ${pendingTasks.map(t => t.content).join('; ')}.`)
+  if (decisions.length) parts.push(`Decisions: ${decisions.map(display).join('; ')}.`)
+  if (openQuestions.length) parts.push(`Open questions: ${openQuestions.map(display).join('; ')}.`)
+  if (pendingTasks.length) parts.push(`Pending tasks: ${pendingTasks.map(display).join('; ')}.`)
   return parts.join(' ')
 }
 
 export class Compiler {
   /**
-   * @param {{ store: object, now?: () => number }} opts
+   * @param {{
+   *   store: object,
+   *   now?: () => number,
+   *   extractor?: object,          // { async extract(messages, ctx) → candidates }
+   *   fallbackExtractor?: object,  // dipakai bila extractor gagal/absent
+   * }} opts
    */
-  constructor({ store, now = () => Date.now() } = {}) {
+  constructor({ store, now = () => Date.now(), extractor = null, fallbackExtractor = undefined } = {}) {
     if (!store) throw new Error('Compiler requires { store }')
     this.store = store
     this.now = now
+    this.extractor = extractor
+    // Default: rule-based fallback. Explicitly pass `null` to disable it
+    // (then a failing LLM call propagates as an error).
+    this.fallbackExtractor = fallbackExtractor === undefined
+      ? new RuleExtractor({ now })
+      : fallbackExtractor
+  }
+
+  async _extract(messages, ctx) {
+    if (this.extractor) {
+      try {
+        const result = await this.extractor.extract(messages, ctx)
+        const candidates = Array.isArray(result) ? result : (result?.candidates ?? [])
+        return { candidates, extractor: this.extractor.kind ?? 'custom' }
+      } catch (err) {
+        if (!this.fallbackExtractor) throw err
+        // LLM gagal (network / key invalid / response tidak valid) → fallback
+        // deterministik agar sistem tetap berfungsi, dengan catatan di snapshot.
+        console.warn(`[context] extractor failed (${err.message}); using rule-based fallback`)
+        const fallback = await this.fallbackExtractor.extract(messages, ctx)
+        return { candidates: fallback, extractor: 'rule-fallback' }
+      }
+    }
+    const fallback = await this.fallbackExtractor.extract(messages, ctx)
+    return { candidates: fallback, extractor: 'rule' }
   }
 
   /**
@@ -41,7 +82,8 @@ export class Compiler {
   async compile({ sessionId, messages, project = null }) {
     if (!Array.isArray(messages)) throw new Error('compile() requires messages[]')
 
-    const candidates = extractCandidates(messages, { sourceSession: sessionId, now: this.now })
+    const ctx = { sourceSession: sessionId, now: this.now }
+    const { candidates, extractor } = await this._extract(messages, ctx)
     const newKnowledge = []
     const updatedKnowledge = []
     const newDecisions = []
@@ -49,8 +91,8 @@ export class Compiler {
 
     for (const cand of candidates) {
       const existing = this.store.list({ type: cand.type, topic: cand.topic, status: ['active', 'temporary', 'uncertain'] })
-      const best = this._findClosest(existing, cand.content)
-      const added = this._resolveAndAdd(cand, best, {
+      const closest = this._findClosest(existing, cand.content)
+      const added = this._resolveAndAdd(cand, closest, {
         newKnowledge, updatedKnowledge, newDecisions, supersededItems,
       })
       if (added && project) {
@@ -66,6 +108,7 @@ export class Compiler {
 
     return {
       session_id: sessionId,
+      extractor_used: extractor,
       summary: buildSummary(sessionId, {
         newKnowledge,
         updated: updatedKnowledge,
@@ -110,7 +153,7 @@ export class Compiler {
 
       if (sim >= 0.8) {
         this.store.update(best.id, {})
-        updatedKnowledge.push({ id: best.id, type: best.type, content: best.content, action: 'verified' })
+        updatedKnowledge.push({ id: best.id, type: best.type, content: best.content, action: 'verified', sensitive: best.sensitive })
         return null
       }
 
@@ -123,14 +166,14 @@ export class Compiler {
 
       if (canSupersede) {
         if (cand.confidence >= 0.7 && cand.confidence >= best.confidence) {
-          const added = this.store.add({ ...cand, supersedes: best.id })
-          this.store.supersede(best.id, { supersededBy: added.id, reason: 'newer statement overrides previous claim' })
+          const added = this.store.supersede(best.id, cand)
           supersededItems.push({
             id: best.id,
             content: best.content,
             status: 'superseded',
             superseded_by: added.id,
             replaced_by_content: added.content,
+            sensitive: best.sensitive,
           })
           newKnowledge.push(added)
           if (cand.type === 'decision') newDecisions.push(added)
@@ -143,8 +186,8 @@ export class Compiler {
         }
       }
 
-      // Balanced confidence or non-supersedeable types → keep both,
-      // but do not let a weaker claim masquerade as a strong one.
+      // Balanced confidence or non-supersedeable types → keep both, but do not
+      // let a weaker claim masquerade as a strong one.
       const added = this.store.add(cand.confidence < 0.7 ? { ...cand, status: 'uncertain' } : cand)
       newKnowledge.push(added)
       if (cand.type === 'decision') newDecisions.push(added)

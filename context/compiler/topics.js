@@ -4,7 +4,7 @@
 // active claims on the same topic are treated as a contradiction. Open-ended
 // facts fall back to an unstable topic and simply coexist.
 
-import { normalizeText, tokenize } from './normalize.js'
+import { normalizeText, tokenize } from '../shared/normalize.js'
 
 // Domain categories — first match wins. Keys are lowercase; multi-word keys
 // matched as substrings with word boundaries.

@@ -4,7 +4,7 @@
 // To upgrade to LLM-based extraction, replace extractCandidates() with a
 // function returning the same shape — the compiler pipeline stays unchanged.
 
-import { keywordTokens } from './normalize.js'
+import { keywordTokens } from '../shared/normalize.js'
 import { extractTopic } from './topics.js'
 
 const SENTENCE_SPLIT = /(?<=[.!?…])\s+|\n+/g
@@ -140,9 +140,37 @@ export function extractCandidates(messages, { sourceSession = null, now = () => 
         created_at: new Date(now()).toISOString(),
         last_verified: new Date(now()).toISOString(),
         status,
+        // Heuristic redaction flag (LLM extractor can do this more accurately).
+        sensitive: isLikelySensitive(utterance),
         meta: { role: msg.role },
       })
     }
   }
   return candidates
+}
+
+// Conservative heuristic for the rule-based extractor: strings that look like
+// credentials / internal URLs / keys are flagged sensitive so they never reach
+// human-readable markdown.
+const SENSITIVE_RE =
+  /(api[\s_-]?key|password|passwd|secret|token|credential|access[\s_-]?key|private[\s_-]?key|-----begin|authorization|bearer\s+[a-z0-9]+|sk_live|pk_live|sk_test|ghp_|sk-)/i
+
+function isLikelySensitive(text) {
+  return SENSITIVE_RE.test(String(text ?? ''))
+}
+
+/**
+ * Rule-based extractor — deterministic fallback / mock for the LLM extractor.
+ * Implements the same async `extract()` interface as `LlmExtractor` so the
+ * compiler can swap them freely.
+ */
+export class RuleExtractor {
+  constructor({ now = () => Date.now() } = {}) {
+    this.now = now
+    this.kind = 'rule'
+  }
+
+  async extract(messages, { sourceSession = null, now = this.now } = {}) {
+    return extractCandidates(messages, { sourceSession, now })
+  }
 }

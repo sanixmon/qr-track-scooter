@@ -7,7 +7,7 @@ const STOPWORDS = new Set([
   'tidak', 'juga', 'agar', 'supaya', 'karena', 'tapi', 'namun', 'atau', 'sebagai',
   'oleh', 'dalam', 'saat', 'seperti', 'bisa', 'dapat', 'harus', 'mau', 'ingin',
   'jadi', 'kalau', 'jika', 'maka', 'setelah', 'sebelum', 'waktu', 'hal', 'secara',
-  'pun', 'bukan', 'yg', 'tsb', 'dgn', 'akan', 'ada', 'adanya', 'dgn', 'ketika',
+  'pun', 'bukan', 'yg', 'tsb', 'dgn', 'akan', 'ada', 'adanya', 'ketika',
   'selalu', 'sekali', 'banyak', 'sangat', 'lebih', 'paling', 'besar', 'kecil',
   // English
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
@@ -62,4 +62,9 @@ export function similarity(a, b) {
   for (const t of setA) if (setB.has(t)) inter++
   const union = new Set([...setA, ...setB]).size
   return inter / union
+}
+
+/** Rough token estimate (~4 chars per token). */
+export function estimateTokens(text) {
+  return Math.ceil(String(text).length / 4)
 }

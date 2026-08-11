@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractTopic } from '../lib/topics.js'
+import { extractTopic } from '../compiler/topics.js'
 
 describe('extractTopic', () => {
   it('maps database choices to stable topic', () => {

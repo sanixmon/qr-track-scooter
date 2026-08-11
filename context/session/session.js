@@ -5,8 +5,8 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { Compiler } from './compiler.js'
-import { updateManifest, writeSessionMarkdown, writeMarkdown } from './output.js'
+import { Compiler } from '../compiler/compiler.js'
+import { updateManifest, writeSessionMarkdown, writeMarkdown } from '../render/output.js'
 
 export class SessionManager {
   /**

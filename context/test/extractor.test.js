@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyUtterance, extractCandidates, splitUtterances } from '../lib/extractor.js'
+import { classifyUtterance, extractCandidates, splitUtterances, RuleExtractor } from '../compiler/extract.js'
 
 describe('classifyUtterance', () => {
   it('classifies decisions', () => {
@@ -87,5 +87,24 @@ describe('extractCandidates', () => {
     expect(decision.source_session).toBe('session-001')
     expect(decision.keywords).toContain('postgresql')
     expect(decision.created_at).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('flags credential-like utterances as sensitive (redaction heuristic)', () => {
+    const candidates = extractCandidates(
+      [{ role: 'user', content: 'API key untuk dashboard: sk_live_abc123. Tolong jangan bocorkan.' }],
+      { sourceSession: 'session-001' },
+    )
+    expect(candidates.length).toBeGreaterThan(0)
+    expect(candidates.some(c => c.sensitive)).toBe(true)
+  })
+
+  it('RuleExtractor exposes the async extractor interface (compiler-compatible)', async () => {
+    const extractor = new RuleExtractor()
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'Kita pakai PostgreSQL untuk database' }],
+      { sourceSession: 'session-001' },
+    )
+    expect(Array.isArray(result)).toBe(true)
+    expect(result[0].type).toBe('decision')
   })
 })

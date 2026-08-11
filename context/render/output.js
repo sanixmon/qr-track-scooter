@@ -1,14 +1,22 @@
 // ── Human-readable output ─────────────────────────────────
 // Markdown is a compiled representation, NOT the source of truth
 // (that is knowledge.jsonl). Regenerated on every compile/maintenance run.
+//
+// PRIVACY: item dengan `sensitive: true` TIDAK pernah dirender ke markdown —
+// hanya tersimpan di structured store (diredaksi pada tampilan).
 
 import fs from 'node:fs'
 import path from 'node:path'
 
+function visible(entries) {
+  return entries.filter(e => !e.sensitive)
+}
+
 function bullets(entries, opts = {}) {
-  if (!entries.length) return '_(belum ada)_\n'
+  const list = opts.includeSensitive ? entries : visible(entries)
+  if (!list.length) return '_(belum ada)_\n'
   const includeStatus = opts.includeStatus ?? false
-  return entries
+  return list
     .map(e => {
       const status = includeStatus && e.status !== 'active' ? ` — *${e.status}*` : ''
       return `- ${e.content} ${e.id}${status}`
@@ -25,7 +33,7 @@ function writeFile(dir, name, content) {
   fs.writeFileSync(path.join(dir, name), content, 'utf8')
 }
 
-/** Regenerate .ai/context/*.md from the store. */
+/** Regenerate .ai/context/*.md from the store (sensitive items redacted). */
 export function writeMarkdown({ store, dir, now = () => Date.now() }) {
   const ctxDir = path.join(dir, 'context')
   fs.mkdirSync(ctxDir, { recursive: true })
@@ -41,11 +49,12 @@ export function writeMarkdown({ store, dir, now = () => Date.now() }) {
   ].join('\n')
   writeFile(ctxDir, 'core.md', `# Core Context\n\n_Compiled ${new Date(now()).toISOString()}_\n\n${core}`)
 
-  const projectEntries = s.list({ type: 'project', status: 'active' })
-  writeFile(ctxDir, 'project.md', `# Project Information\n\n${bullets(projectEntries)}`)
+  writeFile(ctxDir, 'project.md', `# Project Information\n\n${bullets(s.list({ type: 'project', status: 'active' }))}`)
 
   const decisions = s.list({ type: 'decision', status: 'active' })
-  const superseded = s.list({ type: 'decision', status: 'superseded' }).filter(d => d.superseded_by)
+  const superseded = s.list({ type: 'decision', status: 'superseded' })
+    .filter(d => d.superseded_by)
+    .filter(d => !d.sensitive) // privacy: redaksi item sensitive
   let decisionsBody = bullets(decisions)
   if (superseded.length) {
     decisionsBody += '\n### Superseded trail\n\n' + superseded
@@ -66,28 +75,31 @@ export function writeMarkdown({ store, dir, now = () => Date.now() }) {
   return { dir: ctxDir, files: ['core.md', 'project.md', 'decisions.md', 'constraints.md', 'current-state.md', 'glossary.md'] }
 }
 
-/** Write a session snapshot as human-readable markdown. */
+/** Write a session snapshot as human-readable markdown (sensitive redacted). */
 export function writeSessionMarkdown(snapshot, dir, now = () => Date.now()) {
   const sessionsDir = path.join(dir, 'sessions')
   fs.mkdirSync(sessionsDir, { recursive: true })
+  const redact = items => (items ?? []).filter(m => !m.sensitive)
   const lines = []
+  const redactList = items => (items ?? []).filter(i => !i.sensitive)
   lines.push(`# Session ${snapshot.session_id}`)
   lines.push('')
   lines.push(`summary: ${snapshot.summary}`)
+  lines.push(`extractor_used: ${snapshot.extractor_used ?? 'n/a'}`)
   lines.push(`compiled_at: ${new Date(now()).toISOString()}`)
   lines.push('')
   lines.push('## New Knowledge')
-  lines.push(bullets(snapshot.new_knowledge.map(miniToBullet)))
+  lines.push(bullets(redact(snapshot.new_knowledge).map(miniToBullet)))
   lines.push('## Updated / Verified')
-  lines.push(bullets(snapshot.updated_knowledge.map(u => `- ${u.content} (${u.id}) — ${u.action}`)))
+  lines.push(bullets(redactList(snapshot.updated_knowledge).map(u => `- ${u.content} (${u.id}) — ${u.action}`)))
   lines.push('## New Decisions')
-  lines.push(bullets(snapshot.new_decisions.map(miniToBullet)))
+  lines.push(bullets(redact(snapshot.new_decisions).map(miniToBullet)))
   lines.push('## Superseded')
-  lines.push(bullets(snapshot.superseded_items.map(su => `- ~~${su.content}~~ (${su.id}) → ${su.superseded_by}`)))
+  lines.push(bullets(redactList(snapshot.superseded_items).map(su => `- ~~${su.content}~~ (${su.id}) → ${su.superseded_by}`)))
   lines.push('## Open Questions')
-  lines.push(bullets(snapshot.open_questions.map(miniToBullet)))
+  lines.push(bullets(redact(snapshot.open_questions).map(miniToBullet)))
   lines.push('## Pending Tasks')
-  lines.push(bullets(snapshot.pending_tasks.map(miniToBullet)))
+  lines.push(bullets(redact(snapshot.pending_tasks).map(miniToBullet)))
   writeFile(sessionsDir, `${snapshot.session_id}.md`, lines.join('\n'))
   return path.join(sessionsDir, `${snapshot.session_id}.md`)
 }
@@ -96,7 +108,7 @@ function miniToBullet(m) {
   return `- ${m.content} (${m.id}, ${m.type})`
 }
 
-/** Update manifest.json with stats and last session. */
+/** Update manifest.json with stats + id_counters (preserved from existing). */
 export function updateManifest({ dir, store, lastSession = null, now = () => Date.now() }) {
   const manifestPath = path.join(dir, 'manifest.json')
   let manifest = {}
@@ -106,10 +118,12 @@ export function updateManifest({ dir, store, lastSession = null, now = () => Dat
   const snap = store.snapshot()
   const iso = new Date(now()).toISOString()
   manifest = {
-    format_version: 1,
+    format_version: 2,
     created_at: manifest.created_at ?? iso,
     updated_at: iso,
     last_session: lastSession ?? manifest.last_session ?? null,
+    // ID counters are owned by the store (FileContextStore) — never clobber.
+    id_counters: manifest.id_counters ?? {},
     stats: snap.stats,
     layers: {
       l0: ['core.md'],

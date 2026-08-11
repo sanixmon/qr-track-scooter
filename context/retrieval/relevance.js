@@ -1,8 +1,9 @@
 // ── Deterministic relevance ranking ───────────────────────
-// Pure functions: no store dependency, so both MemoryContextStore and
-// FileContextStore share exactly the same scoring.
+// Rule-based scoring (MVP per spec): keyword overlap × importance × status ×
+// confidence × recency. The scoring function is isolated so a vector/embedding
+// scorer can be swapped later without changing the public interface.
 
-import { tokenize } from './normalize.js'
+import { tokenize, estimateTokens } from '../shared/normalize.js'
 
 const STATUS_FACTOR = {
   active: 1,
@@ -22,11 +23,11 @@ function tsOf(entry) {
 }
 
 /**
- * Score an entry against query tokens.
- * Returns 0 when there is no keyword overlap, when the status excludes it
+ * Score an entry against context tokens.
+ * Returns 0 when there is no keyword overlap, or when the status excludes it
  * (superseded/deprecated) unless `includeObsolete` is set.
  */
-export function scoreEntry(entry, queryTokens, { now = Date.now(), includeObsolete = false } = {}) {
+export function scoreEntry(entry, contextTokens, { now = Date.now(), includeObsolete = false } = {}) {
   const rawFactor = STATUS_FACTOR[entry.status] ?? 1
   // Obsolete items are only retrievable when explicitly requested, and even
   // then they rank far below active knowledge.
@@ -35,10 +36,10 @@ export function scoreEntry(entry, queryTokens, { now = Date.now(), includeObsole
 
   const haystack = `${entry.content} ${(entry.keywords ?? []).join(' ')}`.toLowerCase()
   let overlap = 0
-  for (const t of queryTokens) if (haystack.includes(t)) overlap++
+  for (const t of contextTokens) if (haystack.includes(t)) overlap++
   if (overlap === 0) return 0
 
-  const base = overlap / Math.max(1, queryTokens.length)
+  const base = overlap / Math.max(1, contextTokens.length)
   const age = Math.max(0, now - tsOf(entry))
   const recency = Math.exp(-age / RECENCY_HALF_LIFE_MS)
   const importance = Math.min(5, Math.max(1, entry.importance ?? 2)) / 5
@@ -48,8 +49,8 @@ export function scoreEntry(entry, queryTokens, { now = Date.now(), includeObsole
 }
 
 /** Ranked search: returns [{ entry, score }] sorted desc (tie-break by id). */
-export function searchEntries(entries, query, opts = {}) {
-  const tokens = tokenize(query).filter(t => t.length > 1)
+export function searchEntries(entries, context, opts = {}) {
+  const tokens = tokenize(context).filter(t => t.length > 1)
   if (tokens.length === 0) return []
   const results = []
   for (const entry of entries) {
@@ -60,8 +61,23 @@ export function searchEntries(entries, query, opts = {}) {
   return results
 }
 
-/** Top-k relevant entries (with scores), filtered by minScore. */
-export function rankRelevant(entries, query, { k = 8, minScore = 0.05, ...opts } = {}) {
-  const ranked = searchEntries(entries, query, opts)
-  return ranked.filter(r => r.score >= minScore).slice(0, k)
+/**
+ * Top-k relevant entries with scores, filtered by minScore and capped by a
+ * cumulative token `budget` (L3 per-layer budget enforcement — items are
+ * taken in ranking order, so the highest-ranked ones survive).
+ */
+export function rankRelevant(entries, context, { k = 8, minScore = 0.05, budget = 0, ...opts } = {}) {
+  let ranked = searchEntries(entries, context, opts).filter(r => r.score >= minScore)
+  if (budget > 0) {
+    const out = []
+    let tokens = 0
+    for (const r of ranked) {
+      const t = estimateTokens(r.entry.content)
+      if (tokens + t > budget && out.length) break
+      out.push(r)
+      tokens += t
+    }
+    ranked = out
+  }
+  return ranked.slice(0, k)
 }

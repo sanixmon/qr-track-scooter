@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { searchEntries, rankRelevant, scoreEntry } from '../lib/relevance.js'
+import { searchEntries, rankRelevant, scoreEntry } from '../retrieval/relevance.js'
 
 const NOW = new Date('2026-02-01T00:00:00.000Z').getTime()
 
@@ -69,6 +69,20 @@ describe('searchEntries / rankRelevant', () => {
 
   it('empty query returns nothing', () => {
     expect(searchEntries(entries, '  ', { now: NOW })).toHaveLength(0)
+  })
+
+  it('budget caps cumulative content tokens (L3 enforcement), highest-ranked survive', () => {
+    const pool = [
+      entry({ id: 'fact-001', content: 'postgresql dipakai untuk database utama', keywords: ['postgresql', 'database'], importance: 5 }),
+      entry({ id: 'fact-002', content: 'postgresql versi lama didokumentasikan', keywords: ['postgresql'], importance: 1 }),
+      entry({ id: 'fact-003', content: 'postgresql tuning lanjutan sangat panjang sekali', keywords: ['postgresql'], importance: 4 }),
+    ]
+    const hits = rankRelevant(pool, 'postgresql', { now: NOW, budget: 20, k: 10 })
+    expect(hits.length).toBeGreaterThan(0)
+    const usedTokens = hits.reduce((sum, h) => sum + Math.ceil(h.entry.content.length / 4), 0)
+    expect(usedTokens).toBeLessThanOrEqual(24)
+    // Paling relevan (importance 5) pasti lolos
+    expect(hits[0].entry.id).toBe('fact-001')
   })
 
   it('does not crash when keywords are missing (hand-edited JSONL)', () => {

@@ -3,20 +3,22 @@
 // Usage:
 //   node context/cli.js init [--dir .ai]
 //   node context/cli.js status
-//   node context/cli.js add "<content>" [--type decision] [--importance 4] [--topic X]
+//   node context/cli.js add "<content>" [--type decision] [--importance 4] [--topic X] [--sensitive]
 //   node context/cli.js session-begin
 //   node context/cli.js message <session> <role> "<content>"
 //   node context/cli.js compile <session> [--project name]
-//   node context/cli.js build "<request>" [--layers l0,l1,l2,l3] [--max-tokens 2500]
-//   node context/cli.js list [--type decision] [--status active]
-//   node context/cli.js supersede <id> <byId>
+//   node context/cli.js build "<request>" [--layers l0,l1,l2,l3] [--budget-l3 1500] [--include-sensitive]
+//   node context/cli.js list [--type X] [--status Y] [--show-sensitive]
+//   node context/cli.js supersede <id> "<new content>" [--type decision] [--topic X]
 //   node context/cli.js sessions
+//   node context/cli.js optimize [--max-age-days 90] [--min-importance 2]
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { createSystem } from './index.js'
-import { ENTRY_TYPES } from './lib/store.js'
-import { extractTopic } from './lib/topics.js'
+import { ENTRY_TYPES } from './store/store.js'
+import { extractTopic } from './compiler/topics.js'
+import { LAYER_NAMES } from './builder/builder.js'
 
 function parseArgs(argv) {
   const positional = []
@@ -42,15 +44,15 @@ function printHelp() {
     'Commands:',
     '  init [--dir .ai]                      create dirs + manifest',
     '  status                                store stats (type/status)',
-    '  add "<content>" [--type decision] [--importance 4] [--topic X]',
+    '  add "<content>" [--type decision] [--importance 4] [--topic X] [--sensitive]',
     '  session-begin                         create a new session',
     '  message <session> <role> "<content>"  append a message',
     '  compile <session> [--project name]    compile session → snapshot + markdown',
-    '  build "<request>" [--layers l0,l1,l2,l3] [--max-tokens 2500]',
-    '  list [--type X] [--status Y]          list knowledge entries',
-    '  supersede <id> <byId>                 mark <id> superseded by <byId>',
+    '  build "<request>" [--layers l0,l1,l2,l3] [--budget-l3 1500] [--include-sensitive]',
+    '  list [--type X] [--status Y] [--show-sensitive]',
+    '  supersede <id> "<new content>" [--type decision] [--topic X]',
     '  sessions                              list sessions',
-  '  optimize [--max-age-days 90] [--min-importance 2]',
+    '  optimize [--max-age-days 90] [--min-importance 2]',
   ]
   console.log(usage.join('\n'))
 }
@@ -82,6 +84,7 @@ async function main() {
       console.log(`total entries: ${snap.stats.total}`)
       console.log(`by status: ${JSON.stringify(snap.stats.by_status)}`)
       console.log(`by type:   ${JSON.stringify(snap.stats.by_type)}`)
+      console.log(`sensitive: ${system.store.list({ sensitive: true }).length}`)
       break
     }
 
@@ -97,9 +100,10 @@ async function main() {
         topic,
         importance: Number(flags.importance ?? 2),
         confidence: Number(flags.confidence ?? (type === 'fact' ? 0.6 : 0.85)),
+        sensitive: flags.sensitive === true,
       })
       system.refreshOutput()
-      console.log(`added ${added.id} (${type}, topic="${topic}", importance=${added.importance})`)
+      console.log(`added ${added.id} (${type}, topic="${topic}", importance=${added.importance}${added.sensitive ? ', SENSITIVE' : ''})`)
       break
     }
 
@@ -123,6 +127,7 @@ async function main() {
       const snapshot = await system.sessions.compileSession(sessionId, { project: flags.project || null })
       console.log('=== snapshot ===')
       console.log(snapshot.summary)
+      console.log(`extractor: ${snapshot.extractor_used ?? 'n/a'}`)
       console.log(`new: ${snapshot.new_knowledge.length}, updated: ${snapshot.updated_knowledge.length}, superseded: ${snapshot.superseded_items.length}`)
       console.log(`markdown → ${dir}/context/*.md, ${dir}/sessions/${sessionId}.md`)
       break
@@ -132,12 +137,18 @@ async function main() {
       const request = positional[1]
       if (!request) { console.error('usage: build "<request>"'); process.exit(1) }
       const layers = flags.layers ? flags.layers.split(',') : ['l0', 'l1', 'l2', 'l3']
+      const budgets = {}
+      for (const layer of LAYER_NAMES) {
+        if (flags[`budget-${layer}`] != null) budgets[layer] = Number(flags[`budget-${layer}`])
+      }
       const result = system.builder.build(request, {
         layers,
-        maxTokens: Number(flags['max-tokens'] ?? 2500),
+        budgets,
+        maxTokens: flags['max-tokens'] != null ? Number(flags['max-tokens']) : null,
+        includeSensitive: flags['include-sensitive'] === true,
       })
       console.log(result.text)
-      console.log(`\n[layers: ${result.included.join(',') || '-'} | omitted: ${result.omitted.join(',') || '-'} | tokens: ${result.tokens}]`)
+      console.log(`\n[layers: ${result.included.join(',') || '-'} | omitted: ${result.omitted.join(',') || '-'} | tokens: ${result.tokens} | per-layer: ${JSON.stringify(result.layerTokens)}]`)
       break
     }
 
@@ -148,18 +159,27 @@ async function main() {
       })
       for (const e of entries) {
         const status = e.status !== 'active' ? ` [${e.status}]` : ''
-        console.log(`${e.id}\t${e.type}\t${e.topic}\timp=${e.importance}\tconf=${e.confidence}${status}\t${e.content}`)
+        const sensitive = e.sensitive ? ' [SENSITIVE]' : ''
+        console.log(`${e.id}\t${e.type}\t${e.topic}\timp=${e.importance}\tconf=${e.confidence}${status}${sensitive}\t${e.content}`)
       }
       if (!entries.length) console.log('(no entries)')
       break
     }
 
     case 'supersede': {
-      const [id, byId] = positional.slice(1)
-      if (!id || !byId) { console.error('usage: supersede <id> <byId>'); process.exit(1) }
-      const updated = system.store.supersede(id, { supersededBy: byId, reason: 'manual override' })
-      if (!updated) { console.error(`unknown entry "${id}"`); process.exit(1) }
-      console.log(`${id} marked superseded by ${byId}`)
+      const [id, ...rest] = positional.slice(1)
+      const content = rest.join(' ')
+      if (!id || !content) { console.error('usage: supersede <id> "<new content>"'); process.exit(1) }
+      const added = system.store.supersede(id, {
+        type: flags.type || 'decision',
+        content,
+        topic: flags.topic || extractTopic(content).topic,
+        importance: Number(flags.importance ?? 4),
+        confidence: Number(flags.confidence ?? 0.9),
+      })
+      if (!added) { console.error(`unknown entry "${id}"`); process.exit(1) }
+      system.refreshOutput()
+      console.log(`${id} superseded by ${added.id}`)
       break
     }
 

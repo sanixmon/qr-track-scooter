@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import { describe, it, expect } from 'vitest'
-import { MemoryContextStore } from '../lib/store.js'
-import { ContextBuilder, estimateTokens } from '../lib/builder.js'
+import { MemoryContextStore } from '../store/store.js'
+import { ContextBuilder, estimateTokens, LAYER_NAMES } from '../builder/builder.js'
+import { LAYER_BUDGETS, resolveLayerBudgets } from '../config.js'
 import { fixedClock, tempDir, rmDir } from './helpers.js'
 
 function seedStore() {
@@ -15,6 +16,22 @@ function seedStore() {
   store.add({ type: 'fact', content: 'API berjalan di port 3005', importance: 2, confidence: 0.6 })
   return store
 }
+
+describe('config budgets', () => {
+  it('exposes explicit per-layer defaults from a single source', () => {
+    expect(LAYER_BUDGETS.l0).toBe(300)
+    expect(LAYER_BUDGETS.l1).toBe(800)
+    expect(LAYER_BUDGETS.l2).toBe(800)
+    expect(LAYER_BUDGETS.l3).toBe(1500)
+    expect(LAYER_BUDGETS.l4).toBe(0)
+  })
+
+  it('resolves overrides and env variables', () => {
+    expect(resolveLayerBudgets({ l3: 500 }, {})).toMatchObject({ l3: 500, l0: 300 })
+    expect(resolveLayerBudgets({}, { CONTEXT_BUDGET_L0: '100' })).toMatchObject({ l0: 100 })
+    expect(resolveLayerBudgets({ l0: 50 }, { CONTEXT_BUDGET_L0: '100' })).toMatchObject({ l0: 50 }) // override menang
+  })
+})
 
 describe('ContextBuilder', () => {
   it('assembles L0–L3 layers in priority order', () => {
@@ -38,15 +55,32 @@ describe('ContextBuilder', () => {
     expect(l2).not.toMatch(/^- SQLite/)
   })
 
-  it('respects the token budget and reports omissions', () => {
+  it('enforces per-layer token budgets (L3 capped by ranking order)', () => {
+    const store = seedStore()
+    store.add({ type: 'fact', content: 'postgresql tuning lanjutan yang sangat panjang sekali', topic: 'database', importance: 4, confidence: 0.7 })
+    const builder = new ContextBuilder({ store, budgets: { l3: 40 } })
+    const result = builder.build('postgresql', { maxTokens: 5000 })
+    expect(result.layerTokens.l3).toBeLessThanOrEqual(60)
+    expect(result.text).toContain('postgresql')
+  })
+
+  it('respects the total token budget and reports omissions', () => {
     const store = seedStore()
     const builder = new ContextBuilder({ store })
     const tiny = builder.build('database', { maxTokens: 40 })
-    expect(tiny.tokens).toBeLessThanOrEqual(60) // allows the request header + first section
+    expect(tiny.tokens).toBeLessThanOrEqual(60)
     expect(tiny.omitted.length).toBeGreaterThan(0)
+  })
 
-    const result = builder.build('database', { maxTokens: 10 })
-    expect(result.tokens).toBeGreaterThanOrEqual(1)
+  it('redacts sensitive items by default and includes them with includeSensitive', () => {
+    const store = seedStore()
+    store.add({ type: 'fact', content: 'API key produksi ada di .env', importance: 4, confidence: 0.9, sensitive: true })
+    const builder = new ContextBuilder({ store })
+    const redacted = builder.build('', { maxTokens: 5000 })
+    expect(redacted.text).not.toContain('.env')
+
+    const full = builder.build('', { maxTokens: 5000, includeSensitive: true })
+    expect(full.text).toContain('.env')
   })
 
   it('falls back to raw conversation (L5) when L3 has no relevant knowledge', () => {
@@ -73,7 +107,7 @@ describe('ContextBuilder', () => {
     expect(result.included).not.toContain('l5')
   })
 
-  it('renders L4 historical sessions from compiled summaries', () => {
+  it('renders L4 historical sessions from compiled summaries (on-demand)', () => {
     const dir = tempDir()
     const store = seedStore()
     const builder = new ContextBuilder({ store, sessionsDir: `${dir}/sessions` })
@@ -87,5 +121,9 @@ describe('ContextBuilder', () => {
   it('estimateTokens is a simple deterministic estimate', () => {
     expect(estimateTokens('1234')).toBe(1)
     expect(estimateTokens('x'.repeat(10))).toBe(3)
+  })
+
+  it('LAYER_NAMES exposes the layer ladder', () => {
+    expect(LAYER_NAMES).toEqual(['l0', 'l1', 'l2', 'l3', 'l4', 'l5'])
   })
 })
